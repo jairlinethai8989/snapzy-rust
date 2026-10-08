@@ -1,0 +1,32 @@
+[package]
+name = "snapzy-rust-preview"
+version = "0.1.0-alpha.1"
+edition = "2024"
+license = "MIT"
+authors = ["jairlinethai"]
+description = "Native Windows capture experiment for SnapZy"
+repository = "https://github.com/jairlinethai8989/snapzy-rust"
+build = "build.rs"
+
+[[bin]]
+name = "snapzy-rust"
+path = "src/main.rs"
+
+[dependencies]
+png = "=0.18.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+windows-sys = { version = "=0.61.2", features = [
+    "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm",
+    "Win32_System_DataExchange", "Win32_System_LibraryLoader",
+    "Win32_System_Memory", "Win32_System_Threading",
+    "Win32_UI_Controls_Dialogs", "Win32_UI_HiDpi", "Win32_UI_Shell",
+    "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging",
+    "Win32_Security"
+] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "debuginfo"
