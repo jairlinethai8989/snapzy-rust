@@ -2,7 +2,7 @@
 
 Date: 2026-10-09 (Asia/Bangkok)
 Target milestone: 0.2.0-alpha.1
-Status: feature proposal approved; written specification awaiting review
+Status: written specification approved by the user on 2026-10-09
 
 ## Purpose and Scope
 

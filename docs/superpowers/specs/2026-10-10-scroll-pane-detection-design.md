@@ -1,6 +1,8 @@
 # Click-to-detect scrolling capture
 
-Status: approved approach; awaiting user review of this detailed specification.
+Status: historical click-first spec, superseded by the user-approved
+[.NET-style hover/frame/click design](2026-10-10-dotnet-scroll-parity-design.md)
+in local 0.9.0-alpha.6. Actual Lark/Excel acceptance remains pending.
 Target: SnapZy Rust Preview, next local alpha increment. Do not change either
 .NET application or push a release before tester approval.
 
@@ -20,7 +22,7 @@ multi-pane applications easier to capture without guessing the capture bounds.
    targeting overlay, as it does for capture selection today.
 3. The user clicks once inside the content pane they intend to capture. A drag
    is not required and does not define the capture region.
-4. On a worker thread, SnapZy inspects the UI Automation element under that
+4. After the mouse button is released, a hidden helper process inspects the UI Automation element under that
    screen point and walks its parent chain, nearest first, looking for a
    currently vertically scrollable element. It may also accept a native HWND
    candidate when Win32 scrollbar state positively indicates vertical
@@ -53,6 +55,9 @@ multi-pane applications easier to capture without guessing the capture bounds.
   worker at a time, and tag each click with a generation identity so late
   results cannot replace a newer point or a cancelled session. A nonresponsive
   provider must not freeze the launcher or create unbounded worker threads.
+  UIA runs in one disposable helper process with a four-second deadline.
+  Timeout or cancellation kills and reaps the helper so another request can
+  proceed. A kill-on-close Windows job also terminates it if the main app exits.
   Revalidate target window identity, process, bounds, visibility, foreground
   and unobstructed region at confirmation and throughout capture.
 - The native fallback is limited to a child/window whose scroll range proves

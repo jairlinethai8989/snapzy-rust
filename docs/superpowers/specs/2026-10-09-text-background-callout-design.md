@@ -1,6 +1,6 @@
 # Text Background And Speech Bubble
 
-Status: conceptual design approved 2026-10-09; written spec awaiting review.
+Status: conceptual and written design approved by user on 2026-10-09.
 Scope: Rust SnapZy only. Independent of the approved scrolling pilot.
 
 ## Alternatives And Choice
@@ -59,3 +59,8 @@ creation, fill/color toggle, Thai/English editing, drag handles, Undo/Redo and
 byte-identical annotated PNG/clipboard. Inspect compact UI and mixed/high DPI.
 
 No .NET changes, installer, push, tag or release until tester approval.
+
+Implementation status: model, geometry, shared rendering, interactions and
+native EN/TH controls are implemented for the separate 0.5.0-alpha.1 portable
+candidate. See its verification report and implementation plan for the test
+gates and outstanding physical tester acceptance. This is not a public release.

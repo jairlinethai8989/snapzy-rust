@@ -118,6 +118,27 @@ pub fn window_candidates() -> Vec<Candidate> {
     windows
 }
 
+pub fn current_window_rect(window: usize) -> Option<Rect> {
+    let window = window as HWND;
+    unsafe {
+        if IsWindow(window) == 0 || IsWindowVisible(window) == 0 || IsIconic(window) != 0 {
+            return None;
+        }
+        let mut bounds: RECT = zeroed();
+        if DwmGetWindowAttribute(
+            window,
+            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
+            &mut bounds as *mut _ as _,
+            size_of::<RECT>() as u32,
+        ) < 0
+            && GetWindowRect(window, &mut bounds) == 0
+        {
+            return None;
+        }
+        Rect::from_edges(bounds.left, bounds.top, bounds.right, bounds.bottom).ok()
+    }
+}
+
 unsafe extern "system" fn collect_window(window: HWND, parameter: LPARAM) -> i32 {
     unsafe {
         if IsWindowVisible(window) == 0
@@ -150,18 +171,7 @@ unsafe extern "system" fn collect_window(window: HWND, parameter: LPARAM) -> i32
         {
             return 1;
         }
-        let mut bounds: RECT = zeroed();
-        if DwmGetWindowAttribute(
-            window,
-            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
-            &mut bounds as *mut _ as _,
-            size_of::<RECT>() as u32,
-        ) < 0
-            && GetWindowRect(window, &mut bounds) == 0
-        {
-            return 1;
-        }
-        if let Ok(rect) = Rect::from_edges(bounds.left, bounds.top, bounds.right, bounds.bottom) {
+        if let Some(rect) = current_window_rect(window as usize) {
             (&mut *(parameter as *mut Vec<Candidate>)).push(Candidate {
                 window: window as usize,
                 rect,
@@ -220,5 +230,29 @@ pub fn monitor_at(x: i32, y: i32) -> Result<Rect, String> {
             info.rcMonitor.right,
             info.rcMonitor.bottom,
         )
+    }
+}
+
+pub fn monitor_handle_at(x: i32, y: i32) -> Result<usize, String> {
+    let monitor = unsafe {
+        MonitorFromPoint(
+            windows_sys::Win32::Foundation::POINT { x, y },
+            MONITOR_DEFAULTTONEAREST,
+        )
+    };
+    if monitor.is_null() {
+        Err("Cannot determine the selected display.".into())
+    } else {
+        Ok(monitor as usize)
+    }
+}
+
+pub fn window_pid(window: usize) -> Result<u32, String> {
+    let mut pid = 0;
+    let thread = unsafe { GetWindowThreadProcessId(window as HWND, &mut pid) };
+    if thread == 0 || pid == 0 {
+        Err("The selected window is no longer available.".into())
+    } else {
+        Ok(pid)
     }
 }

@@ -1,11 +1,51 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
+mod audio;
+mod audio_capture;
+mod callout;
 mod capture;
 mod clipboard;
+mod combine;
+mod compact_ui;
+mod composition;
+mod editor;
+mod editor_controls;
+mod effects;
+mod effects_ui;
 mod frame;
+mod geometry;
+mod glyphs;
+mod image_io;
+mod image_limits;
+mod interaction;
+mod memory;
+mod native_icons;
+mod native_tooltips;
+mod neosnap;
+mod ocr;
+mod paint_buffer;
+mod project;
+mod render;
+mod scroll;
+mod scroll_auto;
+mod scroll_detect;
+mod scroll_job;
+mod scroll_probe;
 mod settings;
+mod shape_frame;
+mod sheet_viewport;
+mod text_frame;
 mod trace;
 mod ui;
+mod video;
+mod video_capture;
+mod video_clip;
+mod video_file;
+mod video_media;
+mod video_playback;
+mod video_service;
+mod video_worker;
+mod workspace;
 
 fn main() {
     let arguments: Vec<_> = std::env::args_os().collect();
@@ -16,6 +56,22 @@ fn main() {
         if settings::use_test_directory(std::path::PathBuf::from(path)).is_err() {
             std::process::exit(2);
         }
+    }
+    if let Some(index) = arguments
+        .iter()
+        .position(|arg| arg == "--scroll-detect-worker")
+    {
+        let success = arguments
+            .get(index + 1)
+            .is_some_and(|path| scroll_probe::worker_main(std::path::Path::new(path)).is_ok());
+        std::process::exit(if success { 0 } else { 2 });
+    }
+    if arguments.iter().any(|arg| arg == "--video-worker") {
+        std::process::exit(if video_worker::worker_main().is_ok() {
+            0
+        } else {
+            2
+        });
     }
     if let Err(error) = ui::run(std::env::args().any(|arg| arg == "--tray")) {
         unsafe {

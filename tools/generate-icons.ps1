@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $root = Split-Path $PSScriptRoot
 $frames = @()
-foreach ($size in @(16,24,32,48,64,128,256)) {
+foreach ($size in @(16,20,24,32,40,48,64,128,256)) {
     $bitmap = [Drawing.Bitmap]::new($size,$size)
     $graphics = [Drawing.Graphics]::FromImage($bitmap)
     $graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
@@ -23,21 +23,18 @@ foreach ($size in @(16,24,32,48,64,128,256)) {
     $graphics.DrawLines($white,[Drawing.PointF[]]@([Drawing.PointF]::new(172,204),[Drawing.PointF]::new(208,204),[Drawing.PointF]::new(208,168)))
     $graphics.FillRectangle($cyan,80,93,96,72)
     $graphics.DrawRectangle($white,80,93,96,72)
-    $graphics.FillRectangle([Drawing.Brushes]::White,165,167,81,79)
-    $font = [Drawing.Font]::new('Segoe UI',60,[Drawing.FontStyle]::Bold,[Drawing.GraphicsUnit]::Pixel)
-    $graphics.DrawString('R',$font,$blue,171,158)
     $stream = [IO.MemoryStream]::new()
     $bitmap.Save($stream,[Drawing.Imaging.ImageFormat]::Png)
     $frames += ,$stream.ToArray()
     if ($size -eq 256) { $bitmap.Save((Join-Path $root 'assets\snapzy-rust.png'),[Drawing.Imaging.ImageFormat]::Png) }
-    $stream.Dispose(); $font.Dispose(); $white.Dispose(); $cyan.Dispose(); $blue.Dispose(); $path.Dispose(); $graphics.Dispose(); $bitmap.Dispose()
+    $stream.Dispose(); $white.Dispose(); $cyan.Dispose(); $blue.Dispose(); $path.Dispose(); $graphics.Dispose(); $bitmap.Dispose()
 }
 $file = [IO.File]::Create((Join-Path $root 'assets\snapzy-rust.ico'))
 $writer = [IO.BinaryWriter]::new($file)
 try {
     $writer.Write([uint16]0); $writer.Write([uint16]1); $writer.Write([uint16]$frames.Count)
     $offset = 6 + 16*$frames.Count
-    $sizes = @(16,24,32,48,64,128,256)
+    $sizes = @(16,20,24,32,40,48,64,128,256)
     for ($i=0;$i -lt $frames.Count;$i++) {
         $dimension = if ($sizes[$i] -eq 256) {0} else {$sizes[$i]}
         $writer.Write([byte]$dimension); $writer.Write([byte]$dimension)
@@ -48,4 +45,4 @@ try {
     }
     foreach ($frame in $frames) { $writer.Write([byte[]]$frame) }
 } finally { $writer.Dispose(); $file.Dispose() }
-Write-Output 'Generated SnapZy Rust Preview icon with R badge.'
+Write-Output 'Generated SnapZy icon set without the R badge.'

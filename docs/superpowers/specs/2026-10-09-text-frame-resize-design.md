@@ -3,7 +3,7 @@
 Date: 2026-10-09, Asia/Bangkok.
 Target: 0.3.0-alpha.2 portable Windows x64 tester candidate.
 Baseline: 0.3.0-alpha.1; tester accepted its tools on 2026-10-09.
-Status: both interaction modes approved; written specification awaiting review.
+Status: written specification approved by the user on 2026-10-09.
 
 ## Requested Behavior
 
@@ -137,5 +137,5 @@ package the portable ZIP, and test the extracted binary before delivery.
 - [x] Reflow-only and bitmap-stretching alternatives considered.
 - [x] Scope, errors, rendering, gesture semantics and tests specified.
 - [x] No unresolved placeholders or conflicting width/size rules.
-- [ ] User review of this written specification.
+- [x] User review of this written specification.
 - [ ] Implementation plan and test-first implementation after written review.
