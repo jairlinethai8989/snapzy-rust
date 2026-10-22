@@ -29,8 +29,10 @@ Alternatives rejected:
 
 ## Product Identity and Version
 
-- Use the visible product name `SnapZy` and a stable SnapZy Rust application
-  identifier rather than the temporary `tauri-trial` identity.
+- Use the Windows product name `SnapZy Rust` and a stable SnapZy Rust
+  application identifier rather than the temporary `tauri-trial` identity.
+  The in-app brand remains `SnapZy`. This prevents the alpha installer from
+  replacing the separate `.NET` product's `SnapZy.lnk` shortcut.
 - Advance the complete tester candidate to `0.15.0-alpha.1`.
 - Show `0.15.0-alpha.1` consistently in the launcher, editor, About window,
   executable metadata, Windows installed-app entry, installer filename and test
@@ -45,11 +47,13 @@ Alternatives rejected:
   required.
 - Install the new application in its own managed Tauri directory under the
   current user's Local AppData.
-- Create one Desktop shortcut and one Start Menu shortcut named `SnapZy`, both
-  pointing to the new Tauri executable.
-- On successful installation, remove only the two legacy `SnapZy Rust`
-  shortcuts that point to `%LOCALAPPDATA%\Programs\SnapZyRust\SnapZy-Rust.exe`.
-  Do not remove a same-named shortcut if its target is different.
+- Create one Desktop shortcut and one Start Menu shortcut named `SnapZy Rust`,
+  both pointing to the new Tauri executable. These replace the identically named
+  legacy Rust shortcuts without changing the separate `.NET` `SnapZy.lnk`.
+- On successful installation, remove a remaining legacy `SnapZy Rust` shortcut
+  only when it still points to
+  `%LOCALAPPDATA%\Programs\SnapZyRust\SnapZy-Rust.exe`. Do not remove a
+  same-named shortcut if its target is different.
 - Preserve the legacy program folder during this tester migration. It is no
   longer reachable from the normal shortcuts and can be removed in a later
   approved cleanup after the new build is validated.
@@ -89,9 +93,10 @@ after implementation. They verify:
 Native verification uses a controlled test install:
 
 - install over the current legacy setup;
-- confirm Windows shows one current SnapZy entry at `0.15.0-alpha.1`;
+- confirm Windows shows one current SnapZy Rust entry at `0.15.0-alpha.1`;
 - confirm Desktop and Start Menu open the Tauri launcher and editor;
 - confirm no normal shortcut opens `0.14.0-alpha.1`;
+- confirm the separate `.NET` `SnapZy.lnk` is unchanged;
 - confirm settings and a test `.snapzy` project remain available;
 - repair-install the same package and verify shortcuts again;
 - uninstall the new app and confirm user data and the retained legacy folder are
