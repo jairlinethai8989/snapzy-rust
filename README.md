@@ -2,6 +2,22 @@
 
 **Version:** 0.15.0-alpha.5 | **Platform:** Windows 10/11, x64 | **License:** MIT
 
+## Download / ดาวน์โหลด
+
+**Windows 10/11 · 64-bit · Pre-release**
+
+[⬇ Download SnapZy 0.15.0-alpha.5 for Windows](https://github.com/jairlinethai8989/snapzy-rust/releases/download/v0.15.0-alpha.5/SnapZy-Setup-0.15.0-alpha.5-win-x64.exe)
+
+New to GitHub? On the release page, expand **Assets** and choose
+`SnapZy-Setup-0.15.0-alpha.5-win-x64.exe`. Open the downloaded file and follow
+the setup steps. This pre-release installer is unsigned, so Windows may show a
+SmartScreen warning.
+
+สำหรับมือใหม่: กดลิงก์ดาวน์โหลดด้านบน หรือเปิดหน้า Release แล้วกด **Assets**
+จากนั้นเลือก `SnapZy-Setup-0.15.0-alpha.5-win-x64.exe` เปิดไฟล์ที่ดาวน์โหลด
+แล้วทำตามขั้นตอนติดตั้ง รุ่นนี้เป็นรุ่นทดสอบและไฟล์ติดตั้งยังไม่ได้ลงลายเซ็น
+Windows จึงอาจแสดงคำเตือน SmartScreen
+
 SnapZy Rust Preview is an early, standalone Rust implementation for measuring
 startup and capture responsiveness against the existing SnapZy Windows app.
 It is an experiment, not a claim that Rust is faster. The two applications use

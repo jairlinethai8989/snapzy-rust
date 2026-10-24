@@ -36,6 +36,6 @@ const installers = (await readdir(nsisDirectory)).filter((name) =>
   name.startsWith("SnapZy Rust_") && name.endsWith("-setup.exe") && name.includes(version)
 );
 if (installers.length !== 1) throw new Error(`Expected one ${version} NSIS installer, found: ${installers.join(", ") || "none"}`);
-const installer = path.join(root, `dist/SnapZy-Rust-Setup-${version}-auto-fit-20261024.exe`);
+const installer = path.join(root, `dist/SnapZy-Setup-${version}-win-x64.exe`);
 await copyFile(path.join(nsisDirectory, installers[0]), installer);
 console.log(JSON.stringify({ portable: destination, installer }));
