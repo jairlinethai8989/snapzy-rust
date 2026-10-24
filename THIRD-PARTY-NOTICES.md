@@ -21,6 +21,13 @@ The compact native launcher and editor toolbar use geometry adapted from
 Lucide 0.468.0. Lucide is distributed under the ISC License; the complete
 notice is included at `third-party-licenses/lucide-0.468.0/LICENSE`.
 
+## Bundled Editor Fonts
+
+The image editor privately loads the Regular faces of Kanit, Prompt, Noto Sans
+Thai and Sarabun from the Google Fonts project. These fonts are distributed
+under the SIL Open Font License 1.1 and are not installed system-wide. Complete
+license texts are included under `third-party-licenses/google-fonts/`.
+
 ## Native OCR Runtime and Language Data
 
 The optional, dynamically loaded Windows x64 OCR runtime is Tesseract OCR

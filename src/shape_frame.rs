@@ -16,7 +16,7 @@ pub enum Handle {
 pub fn supported(tool: Tool) -> bool {
     matches!(
         tool,
-        Tool::Rectangle | Tool::Ellipse | Tool::FilledRectangle | Tool::FilledEllipse
+        Tool::Rectangle | Tool::Ellipse | Tool::FilledRectangle | Tool::FilledEllipse | Tool::Blur
     )
 }
 
@@ -44,7 +44,6 @@ pub struct Resize {
 }
 impl Resize {
     pub fn draft(&self) -> Option<Annotation> {
-        use Handle::*;
         if !supported(self.original.tool)
             || self.start == self.end
             || [self.start.x, self.start.y, self.end.x, self.end.y]
@@ -53,28 +52,36 @@ impl Resize {
         {
             return None;
         }
-        let (mut a, mut b) = self.original.bounds();
         let dx = self.end.x - self.start.x;
         let dy = self.end.y - self.start.y;
-        if matches!(self.handle, TopLeft | BottomLeft | Left) {
-            a.x = (a.x + dx).min(b.x - 1.);
-        }
-        if matches!(self.handle, TopRight | BottomRight | Right) {
-            b.x = (b.x + dx).max(a.x + 1.);
-        }
-        if matches!(self.handle, TopLeft | TopRight | Top) {
-            a.y = (a.y + dy).min(b.y - 1.);
-        }
-        if matches!(self.handle, BottomLeft | BottomRight | Bottom) {
-            b.y = (b.y + dy).max(a.y + 1.);
-        }
-        if !valid_bounds((a, b)) || (a, b) == self.original.bounds() {
-            return None;
-        }
+        let (a, b) = resized_bounds(self.original.bounds(), self.handle, dx, dy)?;
         let mut object = self.original.clone();
         object.points = Arc::new(vec![a, b]);
         Some(object)
     }
+}
+
+pub fn resized_bounds(
+    (mut a, mut b): (Point, Point),
+    handle: Handle,
+    dx: f64,
+    dy: f64,
+) -> Option<(Point, Point)> {
+    use Handle::*;
+    let original = (a, b);
+    if matches!(handle, TopLeft | BottomLeft | Left) {
+        a.x = (a.x + dx).min(b.x - 1.);
+    }
+    if matches!(handle, TopRight | BottomRight | Right) {
+        b.x = (b.x + dx).max(a.x + 1.);
+    }
+    if matches!(handle, TopLeft | TopRight | Top) {
+        a.y = (a.y + dy).min(b.y - 1.);
+    }
+    if matches!(handle, BottomLeft | BottomRight | Bottom) {
+        b.y = (b.y + dy).max(a.y + 1.);
+    }
+    (valid_bounds((a, b)) && (a, b) != original).then_some((a, b))
 }
 
 pub fn valid_bounds((a, b): (Point, Point)) -> bool {

@@ -8,16 +8,20 @@ pub enum Handle {
     BottomLeft,
     Left,
     Right,
+    Top,
+    Bottom,
 }
-pub const HANDLES: [Handle; 6] = [
+pub const HANDLES: [Handle; 8] = [
     Handle::TopLeft,
     Handle::TopRight,
     Handle::BottomRight,
     Handle::BottomLeft,
     Handle::Left,
     Handle::Right,
+    Handle::Top,
+    Handle::Bottom,
 ];
-pub fn positions((a, b): (Point, Point)) -> [(Handle, Point); 6] {
+pub fn positions((a, b): (Point, Point)) -> [(Handle, Point); 8] {
     let p = [
         a,
         Point::new(b.x, a.y),
@@ -25,6 +29,8 @@ pub fn positions((a, b): (Point, Point)) -> [(Handle, Point); 6] {
         Point::new(a.x, b.y),
         Point::new(a.x, (a.y + b.y) / 2.),
         Point::new(b.x, (a.y + b.y) / 2.),
+        Point::new((a.x + b.x) / 2., a.y),
+        Point::new((a.x + b.x) / 2., b.y),
     ];
     std::array::from_fn(|i| (HANDLES[i], p[i]))
 }
@@ -34,6 +40,7 @@ pub fn hit(bounds: (Point, Point), point: Point, radius: f64) -> Option<Handle> 
     }
     positions(bounds)
         .into_iter()
+        .filter(|(handle, _)| !matches!(handle, Handle::Top | Handle::Bottom))
         .find(|(_, p)| (p.x - point.x).abs() <= radius && (p.y - point.y).abs() <= radius)
         .map(|(h, _)| h)
 }
@@ -84,6 +91,9 @@ impl Resize {
                 bottom: false,
             });
         }
+        if matches!(self.handle, Handle::Top | Handle::Bottom) {
+            return None;
+        }
         let right = matches!(self.handle, Handle::TopLeft | Handle::BottomLeft);
         let bottom = matches!(self.handle, Handle::TopLeft | Handle::TopRight);
         let anchor = Point::new(
@@ -123,6 +133,23 @@ impl Resize {
     pub fn bounds(&self) -> (Point, Point) {
         if self.original.tool == crate::editor::Tool::Image {
             let (a, b) = self.original.bounds();
+            let dx = self.end.x - self.start.x;
+            let dy = self.end.y - self.start.y;
+            if !dx.is_finite() || !dy.is_finite() {
+                return (a, b);
+            }
+            if self.handle == Handle::Left {
+                return (Point::new((a.x + dx).min(b.x - 1.), a.y), b);
+            }
+            if self.handle == Handle::Right {
+                return (a, Point::new((b.x + dx).max(a.x + 1.), b.y));
+            }
+            if self.handle == Handle::Top {
+                return (Point::new(a.x, (a.y + dy).min(b.y - 1.)), b);
+            }
+            if self.handle == Handle::Bottom {
+                return (a, Point::new(b.x, (b.y + dy).max(a.y + 1.)));
+            }
             let right = matches!(self.handle, Handle::TopLeft | Handle::BottomLeft);
             let bottom = matches!(self.handle, Handle::TopLeft | Handle::TopRight);
             let anchor = Point::new(
@@ -131,11 +158,6 @@ impl Resize {
             );
             let vx = if right { a.x - b.x } else { b.x - a.x };
             let vy = if bottom { a.y - b.y } else { b.y - a.y };
-            let dx = self.end.x - self.start.x;
-            let dy = self.end.y - self.start.y;
-            if !dx.is_finite() || !dy.is_finite() {
-                return (a, b);
-            }
             let ratio = (((vx + dx) * vx + (vy + dy) * vy) / (vx * vx + vy * vy))
                 .clamp(1. / vx.abs().min(vy.abs()), 32767. / vx.abs().max(vy.abs()));
             let width = (b.x - a.x) * ratio;
@@ -207,6 +229,7 @@ mod tests {
             content: Content::Text {
                 text: Arc::from("Text"),
                 size: 24,
+                font: crate::editor::FontFamily::default(),
                 wrap_width: Some(120),
                 background: Default::default(),
                 tail: None,
@@ -220,7 +243,7 @@ mod tests {
         }
     }
     #[test]
-    fn six_handles_hit_in_source_coordinates_and_corners_take_priority() {
+    fn eight_positions_keep_text_hit_to_six_semantic_handles() {
         let bounds = (Point::new(100., 100.), Point::new(220., 160.));
         let expected = [
             (Handle::TopLeft, Point::new(100., 100.)),
@@ -229,11 +252,14 @@ mod tests {
             (Handle::BottomLeft, Point::new(100., 160.)),
             (Handle::Left, Point::new(100., 130.)),
             (Handle::Right, Point::new(220., 130.)),
+            (Handle::Top, Point::new(160., 100.)),
+            (Handle::Bottom, Point::new(160., 160.)),
         ];
         assert_eq!(positions(bounds), expected);
-        for (h, p) in expected {
+        for (h, p) in expected.into_iter().take(6) {
             assert_eq!(hit(bounds, Point::new(p.x + 2., p.y + 2.), 5.), Some(h));
         }
+        assert_eq!(hit(bounds, Point::new(160., 100.), 5.), None);
         assert_eq!(hit(bounds, Point::new(160., 130.), 5.), None);
         assert_eq!(
             hit(bounds, Point::new(100., 130.), 40.),

@@ -2,4 +2,12 @@
 /dist/
 /artifacts/
 /.superpowers/
+/.vite/
+/work/
+/experiments/tauri/node_modules/
+/experiments/tauri/web-dist/
+/experiments/tauri/src-tauri/target/
+/experiments/tauri/src-tauri/resources/
+/experiments/tauri/src-tauri/gen/
+/experiments/tauri/test-results/
 *.log

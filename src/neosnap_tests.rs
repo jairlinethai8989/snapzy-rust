@@ -248,7 +248,7 @@ fn dotnet_bubble_renders_its_independent_border_and_fill() {
 }
 
 #[test]
-fn imported_text_and_bubble_round_trip_in_schema_four() {
+fn imported_text_and_bubble_round_trip_in_schema_five_with_default_font() {
     let mut v = fixture();
     let mut text = object("text");
     text.as_object_mut().unwrap().remove("x2");
@@ -278,7 +278,8 @@ fn imported_text_and_bubble_round_trip_in_schema_four() {
         .read_to_string(&mut manifest)
         .unwrap();
     let manifest: Value = serde_json::from_str(&manifest).unwrap();
-    assert_eq!(manifest["schema"], 4);
+    assert_eq!(manifest["schema"], 5);
+    assert_eq!(manifest["objects"][0]["content"]["font"], "segoe_ui");
     drop(archive);
 
     let reopened = crate::project::decode(&bytes).unwrap();

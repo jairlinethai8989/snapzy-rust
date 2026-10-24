@@ -684,6 +684,7 @@ fn convert(
         Content::Text {
             text: Arc::from(text),
             size,
+            font: crate::editor::FontFamily::default(),
             wrap_width,
             mask: Arc::new(mask),
             background: TextBackground {

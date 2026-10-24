@@ -4,6 +4,29 @@ pub struct Mask {
     pub height: u32,
     pub alpha: Vec<u8>,
 }
+pub const BUNDLED_FONT_FILES: [&str; 4] = [
+    "Kanit-Regular.ttf",
+    "Prompt-Regular.ttf",
+    "NotoSansThai-Regular.ttf",
+    "Sarabun-Regular.ttf",
+];
+
+pub fn register_bundled_fonts(directory: &std::path::Path) -> usize {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Graphics::Gdi::AddFontResourceExW;
+
+    BUNDLED_FONT_FILES
+        .iter()
+        .filter(|file| {
+            let path = directory.join(file);
+            if !path.is_file() {
+                return false;
+            }
+            let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            unsafe { AddFontResourceExW(wide.as_ptr(), 0x10, std::ptr::null_mut()) > 0 }
+        })
+        .count()
+}
 pub fn step(number: u32, diameter: u32) -> Result<Mask, String> {
     let mask = raster(&number.to_string(), diameter / 2)?;
     let side = diameter - 4;
@@ -28,13 +51,32 @@ pub fn step(number: u32, diameter: u32) -> Result<Mask, String> {
     })
 }
 pub fn raster(text: &str, size: u32) -> Result<Mask, String> {
-    wrapped(text, size, None)
+    raster_font(text, size, crate::editor::FontFamily::default())
+}
+pub fn raster_font(text: &str, size: u32, font: crate::editor::FontFamily) -> Result<Mask, String> {
+    wrapped_font(text, size, None, font)
 }
 pub fn wrapped(text: &str, size: u32, width: Option<u32>) -> Result<Mask, String> {
-    wrapped_weight(text, size, width, 400, 128, 24)
+    wrapped_font(text, size, width, crate::editor::FontFamily::default())
+}
+pub fn wrapped_font(
+    text: &str,
+    size: u32,
+    width: Option<u32>,
+    font: crate::editor::FontFamily,
+) -> Result<Mask, String> {
+    wrapped_weight(text, size, width, 400, 128, 24, font)
 }
 pub fn dotnet_text(text: &str, size: u32, width: Option<u32>) -> Result<Mask, String> {
-    wrapped_weight(text, size, width, 600, 256, 1)
+    dotnet_text_font(text, size, width, crate::editor::FontFamily::default())
+}
+pub fn dotnet_text_font(
+    text: &str,
+    size: u32,
+    width: Option<u32>,
+    font: crate::editor::FontFamily,
+) -> Result<Mask, String> {
+    wrapped_weight(text, size, width, 600, 256, 1, font)
 }
 pub fn dotnet_step(number: u32, source_size: u32) -> Result<Mask, String> {
     wrapped_weight(
@@ -44,6 +86,7 @@ pub fn dotnet_step(number: u32, source_size: u32) -> Result<Mask, String> {
         700,
         512,
         24,
+        crate::editor::FontFamily::default(),
     )
 }
 pub fn dotnet_step_font_size(number: u32, source_size: u32) -> u32 {
@@ -61,6 +104,7 @@ fn wrapped_weight(
     weight: i32,
     maximum_size: u32,
     minimum_width: u32,
+    font_family: crate::editor::FontFamily,
 ) -> Result<Mask, String> {
     use std::{
         mem::{size_of, zeroed},
@@ -93,7 +137,7 @@ fn wrapped_weight(
             0,
             ANTIALIASED_QUALITY as u32,
             0,
-            crate::ui::wide("Segoe UI").as_ptr(),
+            crate::ui::wide(font_family.face_name()).as_ptr(),
         );
         if font.is_null() {
             DeleteDC(dc);
@@ -184,6 +228,18 @@ fn wrapped_weight(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bundled_font_files_cover_every_private_thai_family() {
+        assert_eq!(
+            BUNDLED_FONT_FILES,
+            [
+                "Kanit-Regular.ttf",
+                "Prompt-Regular.ttf",
+                "NotoSansThai-Regular.ttf",
+                "Sarabun-Regular.ttf",
+            ]
+        );
+    }
     #[test]
     fn wrapping_reflows_without_reducing_font_and_keeps_requested_empty_space() {
         let text = "English words in a longer line";

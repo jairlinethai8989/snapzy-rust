@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>SnapZy 0.15.0-alpha.5 | Image editor</title>
+  </head>
+  <body class="editor-page">
+    <main class="editor-app" aria-label="SnapZy image editor">
+      <header class="tab-strip">
+        <div id="document-tabs" class="document-tabs" role="tablist"></div>
+        <button class="new-tab" type="button" data-tooltip="openImage" aria-label="Open image"><i data-lucide="plus"></i></button>
+      </header>
+
+      <section class="command-bar" aria-label="Document commands">
+        <div class="document-identity">
+          <img id="editor-logo" alt="" width="26" height="26" />
+          <div class="document-copy">
+            <strong id="document-title" data-i18n="imageEditor">Image editor</strong>
+            <span id="document-size" data-i18n="noImage">No image open</span>
+          </div>
+        </div>
+        <nav class="document-actions" aria-label="Document actions">
+          <button id="more-button" class="command-button icon-only" type="button" data-menu="more" data-tooltip="more" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
+          <button id="ocr-button" class="command-button icon-only secondary-command" type="button" data-tooltip="ocr" aria-label="OCR"><i data-lucide="scan-text"></i></button>
+          <button id="help-button" class="command-button icon-only secondary-command" type="button" data-tooltip="help" aria-label="Help"><i data-lucide="circle-help"></i></button>
+          <button id="editor-language" class="command-button language-button" type="button" data-tooltip="language">EN</button>
+          <button id="copy-button" class="command-button icon-only" type="button" data-tooltip="copyImage" aria-label="Copy image" disabled><i data-lucide="copy"></i></button>
+          <button id="save-png" class="command-button primary-command" type="button" data-tooltip="savePng" disabled><i data-lucide="download"></i><span>PNG</span></button>
+        </nav>
+      </section>
+
+      <section class="tool-bar" aria-label="Image tools">
+        <div class="tool-group" data-group="selection">
+          <button class="tool-button selected" type="button" data-tool="Select" data-tooltip="select"><i data-lucide="mouse-pointer-2"></i></button>
+          <button class="tool-button" type="button" data-tool="Crop" data-tooltip="crop"><i data-lucide="crop"></i></button>
+          <button class="tool-button" type="button" data-tool="DuplicateArea" data-tooltip="duplicateArea"><i data-lucide="square-dashed-mouse-pointer"></i></button>
+        </div>
+        <div class="tool-group" data-group="drawing">
+          <button class="tool-button" type="button" data-tool="Pen" data-tooltip="pen"><i data-lucide="pen-line"></i></button>
+          <button class="tool-button" type="button" data-tool="Highlighter" data-tooltip="highlighter"><i data-lucide="highlighter"></i></button>
+          <button class="tool-button" type="button" data-tool="Line" data-tooltip="line"><i data-lucide="minus"></i></button>
+          <button class="tool-button" type="button" data-tool="Arrow" data-tooltip="arrow"><i data-lucide="move-up-right"></i></button>
+        </div>
+        <div class="tool-group" data-group="shapes">
+          <button id="outline-shape" class="tool-button grouped-tool" type="button" data-menu="outline-shape" data-tool="Rectangle" data-tooltip="outlineShape" aria-haspopup="menu" aria-expanded="false"><i data-lucide="square"></i><i class="tool-chevron" data-lucide="chevron-down"></i></button>
+          <button id="filled-shape" class="tool-button grouped-tool filled-icon" type="button" data-menu="filled-shape" data-tool="FilledRectangle" data-tooltip="filledShape" aria-haspopup="menu" aria-expanded="false"><i data-lucide="square"></i><i class="tool-chevron" data-lucide="chevron-down"></i></button>
+        </div>
+        <div class="tool-group" data-group="content">
+          <button class="tool-button" type="button" data-tool="Blur" data-tooltip="blur"><i data-lucide="droplets"></i></button>
+          <button class="tool-button step-tool" type="button" data-tool="Step" data-tooltip="step"><i data-lucide="circle"></i></button>
+          <button class="tool-button" type="button" data-tool="Text" data-tooltip="text"><i data-lucide="type"></i></button>
+          <button class="tool-button" type="button" data-tool="Callout" data-tooltip="callout"><i data-lucide="message-square"></i></button>
+        </div>
+        <div class="tool-spacer"></div>
+        <div class="tool-group" data-group="object">
+          <button id="effects-button" class="action-tool" type="button" data-tooltip="effects"><i data-lucide="sparkles"></i></button>
+          <button id="layers-button" class="action-tool" type="button" data-menu="layers" data-tooltip="layers" aria-haspopup="menu" aria-expanded="false"><i data-lucide="layers-3"></i></button>
+        </div>
+        <div class="tool-group" data-group="history">
+          <button id="duplicate-button" class="action-tool" type="button" data-command="duplicate_selection" data-tooltip="duplicateObject" disabled><i data-lucide="copy"></i></button>
+          <button id="delete-button" class="action-tool danger" type="button" data-command="delete" data-tooltip="delete" disabled><i data-lucide="trash-2"></i></button>
+          <button id="undo-button" class="action-tool" type="button" data-command="undo" data-tooltip="undo" disabled><i data-lucide="undo-2"></i></button>
+          <button id="redo-button" class="action-tool" type="button" data-command="redo" data-tooltip="redo" disabled><i data-lucide="redo-2"></i></button>
+        </div>
+      </section>
+
+      <section class="context-bar" aria-label="Tool settings">
+        <div class="context-control color-control">
+          <span data-i18n="color">Color</span>
+          <button id="tool-color" class="color-trigger" type="button" data-color-target="tool" data-tooltip="color" aria-haspopup="menu" aria-expanded="false"><span class="color-swatch" style="--swatch:#ff0000"></span><i data-lucide="chevron-down"></i></button>
+        </div>
+        <label class="context-control size-control">
+          <span data-i18n="size">Size</span>
+          <input id="tool-size" type="number" min="1" max="40" value="5" aria-label="Size" />
+          <span class="unit">px</span>
+        </label>
+        <div class="context-control pattern-control">
+          <span data-i18n="lineStyle">Line style</span>
+          <button id="line-pattern" class="pattern-trigger" type="button" data-menu="pattern" data-tooltip="lineStyle" aria-haspopup="menu" aria-expanded="false"><span class="line-sample" data-pattern="Solid"></span><i data-lucide="chevron-down"></i></button>
+        </div>
+        <label id="font-control" class="context-control font-control" hidden>
+          <span data-i18n="font">Font</span>
+          <select id="text-font" aria-label="Font"></select>
+        </label>
+        <div id="text-background-control" class="context-control background-control" hidden>
+          <label class="compact-check"><input id="text-background-enabled" type="checkbox" /><span data-i18n="background">Background</span></label>
+          <button id="text-background-color" class="color-trigger" type="button" data-color-target="background" data-tooltip="backgroundColor" aria-haspopup="menu" aria-expanded="false"><span class="color-swatch" style="--swatch:#ffffff"></span><i data-lucide="chevron-down"></i></button>
+        </div>
+        <label class="context-control opacity-control">
+          <span data-i18n="opacity">Opacity</span>
+          <input id="tool-opacity" type="range" min="0" max="100" value="100" aria-label="Opacity" />
+          <output id="opacity-value">100%</output>
+        </label>
+        <button id="confirm-crop" class="context-action" type="button" hidden><i data-lucide="check"></i><span data-i18n="applyCrop">Apply crop</span></button>
+        <div class="context-spacer"></div>
+        <div class="zoom-controls" role="group" aria-label="Zoom">
+          <button id="zoom-out" class="view-button zoom-icon" type="button" data-tooltip="zoomOut"><i data-lucide="zoom-out"></i></button>
+          <button id="zoom-value" class="view-button zoom-value" type="button" data-menu="zoom" data-tooltip="zoomPresets" aria-haspopup="menu" aria-expanded="false">100%</button>
+          <button id="zoom-in" class="view-button zoom-icon" type="button" data-tooltip="zoomIn"><i data-lucide="zoom-in"></i></button>
+          <button id="fit-view" class="view-button zoom-fit" type="button" data-tooltip="fit"><i data-lucide="maximize"></i><span data-i18n="fit">Fit</span></button>
+        </div>
+      </section>
+
+      <section id="canvas-stage" class="canvas-stage" aria-label="Image canvas">
+        <canvas id="editor-canvas" tabindex="0" aria-haspopup="menu" aria-expanded="false"></canvas>
+        <div id="empty-state" class="empty-state">
+          <div class="empty-icon"><i data-lucide="image-plus"></i></div>
+          <strong data-i18n="openToEdit">Open an image to start editing</strong>
+          <span data-i18n="dropHint">Choose a PNG, JPEG or BMP file</span>
+          <button id="empty-open" class="empty-open" type="button"><i data-lucide="folder-open"></i><span data-i18n="openImage">Open image</span></button>
+        </div>
+      </section>
+
+      <footer class="editor-statusbar">
+        <span id="editor-status" role="status" aria-live="polite" data-i18n="ready">Ready</span>
+        <span class="canvas-hint" data-i18n="canvasHint">Ctrl + wheel to zoom · Space + drag to pan</span>
+      </footer>
+    </main>
+
+    <input id="open-image" type="file" accept="image/png,image/jpeg,image/bmp" hidden />
+    <input id="custom-color-input" type="color" hidden aria-label="Additional color" />
+    <div id="editor-popup" class="editor-popup" role="menu" hidden></div>
+    <div id="editor-tooltip" class="editor-tooltip" role="tooltip" hidden></div>
+    <div id="editor-notice" class="editor-notice" role="alert" hidden><span id="editor-notice-text"></span><button id="notice-close" type="button" aria-label="Close"><i data-lucide="x"></i></button></div>
+
+    <dialog id="help-dialog">
+      <header><div><span class="dialog-kicker">SnapZy</span><h2 data-i18n="helpTitle">Editor tools</h2></div><button class="dialog-close" type="button" data-close-dialog="help-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>
+      <div id="help-grid" class="help-grid"></div>
+    </dialog>
+    <dialog id="text-dialog" data-kind="Text">
+      <header><div><span class="dialog-kicker">SnapZy</span><h2 id="text-dialog-title">Add text</h2></div><button class="dialog-close" type="button" data-close-dialog="text-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>
+      <div class="text-entry-body">
+        <label for="text-value" data-i18n="textEntryLabel">Text</label>
+        <textarea id="text-value" maxlength="4096" rows="5" data-i18n-placeholder="textEntryPlaceholder" placeholder="Type your text"></textarea>
+        <span class="text-entry-hint" data-i18n="textEntryHint">Supports multiple lines. The background starts transparent.</span>
+      </div>
+      <footer class="dialog-actions">
+        <button type="button" class="dialog-button" data-close-dialog="text-dialog" data-i18n="cancelText">Cancel</button>
+        <button id="text-apply" type="button" class="dialog-button primary" data-i18n="applyText">Apply</button>
+      </footer>
+    </dialog>
+    <dialog id="effects-dialog" class="effects-dialog">
+      <header><div><span class="dialog-kicker">SnapZy</span><h2 data-i18n="effectsTitle">Object effects</h2></div><button class="dialog-close" type="button" data-close-dialog="effects-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>
+      <div class="effects-body">
+        <section class="effect-section">
+          <div class="effect-heading">
+            <div><strong data-i18n="shadow">Shadow</strong><span data-i18n="shadowHelp">Add a shadow behind the selected object</span></div>
+            <label class="switch"><input id="shadow-enabled" type="checkbox" /><span aria-hidden="true"></span></label>
+          </div>
+          <div class="effect-grid" data-effect-controls="shadow">
+            <div class="effect-field color-field"><span data-i18n="color">Color</span><button id="shadow-color" class="color-trigger" type="button" data-color-target="shadow" data-tooltip="color" aria-haspopup="menu" aria-expanded="false"><span class="color-swatch" style="--swatch:#000000"></span><i data-lucide="chevron-down"></i></button></div>
+            <label class="effect-field"><span data-i18n="softness">Softness</span><input id="shadow-blur" type="number" min="0" max="32" value="6" /><small>px</small></label>
+            <label class="effect-field"><span data-i18n="offsetX">Horizontal</span><input id="shadow-x" type="number" min="-32" max="32" value="3" /><small>px</small></label>
+            <label class="effect-field"><span data-i18n="offsetY">Vertical</span><input id="shadow-y" type="number" min="-32" max="32" value="3" /><small>px</small></label>
+          </div>
+        </section>
+        <section id="outline-section" class="effect-section">
+          <div class="effect-heading">
+            <div><strong data-i18n="textOutline">Text outline</strong><span data-i18n="textOutlineHelp">Outline is available for text and speech bubbles</span></div>
+            <label class="switch"><input id="outline-enabled" type="checkbox" /><span aria-hidden="true"></span></label>
+          </div>
+          <div class="effect-grid outline-grid" data-effect-controls="outline">
+            <div class="effect-field color-field"><span data-i18n="color">Color</span><button id="outline-color" class="color-trigger" type="button" data-color-target="outline" data-tooltip="color" aria-haspopup="menu" aria-expanded="false"><span class="color-swatch" style="--swatch:#000000"></span><i data-lucide="chevron-down"></i></button></div>
+            <label class="effect-field"><span data-i18n="size">Size</span><input id="outline-width" type="number" min="1" max="16" value="2" /><small>px</small></label>
+          </div>
+          <p id="outline-unavailable" class="effect-note" data-i18n="outlineUnavailable" hidden>Select a text object to use an outline.</p>
+        </section>
+      </div>
+      <footer class="dialog-actions">
+        <button type="button" class="dialog-button" data-close-dialog="effects-dialog" data-i18n="effectCancel">Cancel</button>
+        <button id="effects-apply" type="button" class="dialog-button primary" data-i18n="effectApply">Apply effects</button>
+      </footer>
+    </dialog>
+    <script type="module" src="/editor.js"></script>
+  </body>
+</html>

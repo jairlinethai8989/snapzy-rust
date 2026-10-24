@@ -897,7 +897,7 @@ fn icon_path(icon: Icon) -> Path {
 }
 
 fn render_rgba(icon: Icon, color: (u8, u8, u8, u8), dpi: u32) -> IconBitmap {
-    let size = ((24_u64 * dpi.max(96) as u64 + 48) / 96) as u32;
+    let size = ((26_u64 * dpi.max(96) as u64 + 48) / 96) as u32;
     render_rgba_at_size(icon, color, size)
 }
 
@@ -1184,6 +1184,15 @@ mod tests {
     }
 
     #[test]
+    fn editor_icons_use_a_clearer_twenty_six_pixel_base_size() {
+        for dpi in [96, 120, 144, 192] {
+            let icon = render(Icon::MousePointer, VisualState::Normal, dpi);
+            assert_eq!(icon.width, (26 * dpi + 48) / 96);
+            assert_eq!(icon.height, icon.width);
+        }
+    }
+
+    #[test]
     fn every_visible_command_has_an_icon_and_localized_accessible_name() {
         let commands = visible_commands();
         assert!(commands.len() >= 40, "registry omitted visible commands");
@@ -1292,7 +1301,7 @@ mod tests {
             let first = render(icon, VisualState::Normal, 96);
             let second = render(icon, VisualState::Normal, 96);
             assert_eq!(first, second, "non-deterministic render for {icon:?}");
-            assert_eq!((first.width, first.height), (24, 24));
+            assert_eq!((first.width, first.height), (26, 26));
             assert!(first.pixels.iter().any(|channel| *channel != 0));
         }
     }
@@ -1303,7 +1312,7 @@ mod tests {
         let disabled = render(Icon::ScanText, VisualState::Disabled, 96);
         let selected = render(Icon::ScanText, VisualState::Selected, 96);
         let high_dpi = render(Icon::ScanText, VisualState::Normal, 192);
-        assert_eq!((high_dpi.width, high_dpi.height), (48, 48));
+        assert_eq!((high_dpi.width, high_dpi.height), (52, 52));
         assert_ne!(normal.pixels, disabled.pixels);
         assert_ne!(normal.pixels, selected.pixels);
         assert!(high_dpi.alpha_bounds().is_some());

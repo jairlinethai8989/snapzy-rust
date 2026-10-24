@@ -53,6 +53,39 @@ mod project_state_tests {
 }
 
 #[cfg(test)]
+mod font_family_tests {
+    use super::*;
+
+    #[test]
+    fn changing_selected_text_font_is_one_reversible_edit() {
+        let mut document = Document::new(640, 480);
+        document
+            .add_text(Point::new(32., 40.), "ภาษาไทย SnapZy", 28, Style::default())
+            .unwrap();
+        let original = document.objects[0].clone();
+
+        assert!(document.set_text_font(FontFamily::Kanit).unwrap());
+        let Content::Text { font, mask, .. } = &document.objects[0].content else {
+            panic!("text object expected")
+        };
+        assert_eq!(*font, FontFamily::Kanit);
+        assert!(!mask.alpha.is_empty());
+        assert_eq!(document.undo.len(), 2);
+
+        assert!(document.undo());
+        assert_eq!(document.objects[0], original);
+        assert!(document.redo());
+        assert!(matches!(
+            document.objects[0].content,
+            Content::Text {
+                font: FontFamily::Kanit,
+                ..
+            }
+        ));
+    }
+}
+
+#[cfg(test)]
 mod effect_tests {
     use super::*;
     use crate::effects::Effects;
@@ -144,6 +177,33 @@ pub enum Pattern {
     Dotted,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FontFamily {
+    #[default]
+    SegoeUi,
+    Arial,
+    Calibri,
+    Tahoma,
+    Kanit,
+    Prompt,
+    NotoSansThai,
+    Sarabun,
+}
+impl FontFamily {
+    pub const fn face_name(self) -> &'static str {
+        match self {
+            Self::SegoeUi => "Segoe UI",
+            Self::Arial => "Arial",
+            Self::Calibri => "Calibri",
+            Self::Tahoma => "Tahoma",
+            Self::Kanit => "Kanit",
+            Self::Prompt => "Prompt",
+            Self::NotoSansThai => "Noto Sans Thai",
+            Self::Sarabun => "Sarabun",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PathRendering {
     #[default]
     Native,
@@ -228,6 +288,7 @@ pub enum Content {
     Text {
         text: Arc<str>,
         size: u32,
+        font: FontFamily,
         wrap_width: Option<u32>,
         mask: Arc<crate::glyphs::Mask>,
         background: Background,
@@ -295,6 +356,13 @@ impl Annotation {
     pub fn text_background(&self) -> Option<Background> {
         if let Content::Text { background, .. } = self.content {
             Some(background)
+        } else {
+            None
+        }
+    }
+    pub fn text_font(&self) -> Option<FontFamily> {
+        if let Content::Text { font, .. } = self.content {
+            Some(font)
         } else {
             None
         }
@@ -445,6 +513,8 @@ struct Snapshot {
     crop: Rect,
     source_clip: Option<Rect>,
     objects: Vec<Annotation>,
+    selected: Option<u64>,
+    restore_selection: bool,
     revision: u64,
 }
 #[derive(Clone)]
@@ -465,7 +535,64 @@ fn source_budget_allows(existing: usize, incoming: usize, shared: bool) -> bool 
         .checked_add(if shared { 0 } else { incoming })
         .is_some_and(|total| total <= crate::image_limits::SOURCE_LIMIT)
 }
+
+fn duplicate_axis_offset(min: f64, max: f64, canvas_min: f64, canvas_max: f64, step: f64) -> f64 {
+    let visible = |offset: f64| max + offset > canvas_min && min + offset < canvas_max;
+    if visible(step) {
+        step
+    } else if visible(-step) {
+        -step
+    } else if max <= canvas_min {
+        canvas_min - min
+    } else if min >= canvas_max {
+        canvas_max - max
+    } else {
+        0.
+    }
+}
+
 impl Document {
+    pub fn add_duplicated_image_at(
+        &mut self,
+        frame: Arc<crate::frame::Frame>,
+        top_left: Point,
+    ) -> Result<bool, String> {
+        self.add_image_at_with_history(frame, top_left, true)
+    }
+
+    fn add_image_at_with_history(
+        &mut self,
+        frame: Arc<crate::frame::Frame>,
+        top_left: Point,
+        restore_selection: bool,
+    ) -> Result<bool, String> {
+        let sources = self.image_sources();
+        let bytes: usize = sources.iter().map(|source| source.bgra.len()).sum();
+        if !source_budget_allows(
+            bytes,
+            frame.bgra.len(),
+            sources.iter().any(|source| Arc::ptr_eq(source, &frame)),
+        ) {
+            return Err(
+                "Image memory limit reached. Close an older editor or use smaller images.".into(),
+            );
+        }
+        let bottom_right = Point::new(
+            top_left.x + frame.width as f64,
+            top_left.y + frame.height as f64,
+        );
+        if !self.insert_with_selection_history(
+            Tool::Image,
+            vec![top_left, bottom_right],
+            Style::default(),
+            Content::Image { frame },
+            restore_selection,
+        ) {
+            return Err("Cannot add another image to this document.".into());
+        }
+        Ok(true)
+    }
+
     pub fn add_image(&mut self, frame: Arc<crate::frame::Frame>) -> Result<bool, String> {
         let sources = self.image_sources();
         let bytes: usize = sources.iter().map(|f| f.bgra.len()).sum();
@@ -531,6 +658,12 @@ impl Document {
             .collect()
     }
     pub fn resize_image(&mut self, bounds: (Point, Point)) -> bool {
+        self.resize_image_impl(bounds, true)
+    }
+    pub fn resize_image_free(&mut self, bounds: (Point, Point)) -> bool {
+        self.resize_image_impl(bounds, false)
+    }
+    fn resize_image_impl(&mut self, bounds: (Point, Point), preserve_aspect: bool) -> bool {
         let Some(i) = self
             .objects
             .iter()
@@ -556,7 +689,7 @@ impl Document {
             || height < 1.
             || width > 32767.
             || height > 32767.
-            || (width / native_width - height / native_height).abs() > 0.00001
+            || (preserve_aspect && (width / native_width - height / native_height).abs() > 0.00001)
             || bounds == self.objects[i].bounds()
         {
             return false;
@@ -624,6 +757,46 @@ impl Document {
             *b = background;
         }
         true
+    }
+    pub fn set_text_font(&mut self, font: FontFamily) -> Result<bool, String> {
+        let Some(i) = self.objects.iter().position(|object| {
+            Some(object.id) == self.selected
+                && object.text_font().is_some_and(|current| current != font)
+        }) else {
+            return Ok(false);
+        };
+        let Content::Text {
+            text,
+            size,
+            wrap_width,
+            layout,
+            ..
+        } = &self.objects[i].content
+        else {
+            return Ok(false);
+        };
+        let mask = Arc::new(match layout {
+            TextLayout::Native => crate::glyphs::wrapped_font(text, *size, *wrap_width, font)?,
+            TextLayout::DotNet { .. } => {
+                crate::glyphs::dotnet_text_font(text, *size, *wrap_width, font)?
+            }
+        });
+        let mut content = self.objects[i].content.clone();
+        if let Content::Text {
+            font: current,
+            mask: current_mask,
+            ..
+        } = &mut content
+        {
+            *current = font;
+            *current_mask = mask;
+        }
+        if !self.permits_mask(&content) {
+            return Err("Text memory limit reached. Use shorter text or fewer edits.".into());
+        }
+        self.begin_edit();
+        self.objects[i].content = content;
+        Ok(true)
     }
     pub fn set_callout_border(&mut self, style: Style) -> bool {
         if !(1..=16).contains(&style.width) {
@@ -713,6 +886,7 @@ impl Document {
         let Content::Text {
             text,
             size: old_size,
+            font,
             wrap_width,
             mask,
             background,
@@ -734,7 +908,7 @@ impl Document {
                 let mask = if size == *old_size && width == *wrap_width {
                     mask.clone()
                 } else {
-                    Arc::new(crate::glyphs::wrapped(text, size, width)?)
+                    Arc::new(crate::glyphs::wrapped_font(text, size, width, *font)?)
                 };
                 (
                     TextLayout::Native,
@@ -752,7 +926,7 @@ impl Document {
                 let mask = if size == *old_size && width == *wrap_width {
                     mask.clone()
                 } else {
-                    Arc::new(crate::glyphs::dotnet_text(text, size, width)?)
+                    Arc::new(crate::glyphs::dotnet_text_font(text, size, width, *font)?)
                 };
                 (
                     TextLayout::DotNet {
@@ -778,7 +952,7 @@ impl Document {
                 }
                 frame.padding = 14f64.min(frame.width / 5.);
                 let inner = Some((frame.width - frame.padding * 2.).max(1.).round() as u32);
-                let mask = Arc::new(crate::glyphs::dotnet_text(text, size, inner)?);
+                let mask = Arc::new(crate::glyphs::dotnet_text_font(text, size, inner, *font)?);
                 let tail = tail.map(|p| {
                     if corner {
                         Point::new(p.x * ratio, p.y * ratio)
@@ -812,6 +986,7 @@ impl Document {
         let content = Content::Text {
             text: text.clone(),
             size,
+            font: *font,
             wrap_width,
             mask,
             background: *background,
@@ -864,6 +1039,17 @@ impl Document {
         bytes <= 1024 * 1024
     }
     fn insert(&mut self, tool: Tool, points: Vec<Point>, style: Style, content: Content) -> bool {
+        self.insert_with_selection_history(tool, points, style, content, false)
+    }
+
+    fn insert_with_selection_history(
+        &mut self,
+        tool: Tool,
+        points: Vec<Point>,
+        style: Style,
+        content: Content,
+        restore_selection: bool,
+    ) -> bool {
         if !self.permits_mask(&content)
             || self.objects.len() >= 2000
             || self.objects.iter().map(|o| o.points.len()).sum::<usize>() + points.len() > 1_000_000
@@ -873,7 +1059,7 @@ impl Document {
         {
             return false;
         }
-        self.begin_edit();
+        self.begin_edit_with_selection(restore_selection);
         let id = self.revision;
         self.objects.push(Annotation {
             id,
@@ -897,7 +1083,15 @@ impl Document {
         size: u32,
         style: Style,
     ) -> Result<bool, String> {
-        self.add_label(p, text, size, style, Background::default(), false)
+        self.add_label_with_font(
+            p,
+            text,
+            size,
+            style,
+            Background::default(),
+            false,
+            FontFamily::default(),
+        )
     }
     pub fn add_label(
         &mut self,
@@ -908,14 +1102,35 @@ impl Document {
         background: Background,
         callout: bool,
     ) -> Result<bool, String> {
+        self.add_label_with_font(
+            p,
+            text,
+            size,
+            style,
+            background,
+            callout,
+            FontFamily::default(),
+        )
+    }
+    pub fn add_label_with_font(
+        &mut self,
+        p: Point,
+        text: &str,
+        size: u32,
+        style: Style,
+        background: Background,
+        callout: bool,
+        font: FontFamily,
+    ) -> Result<bool, String> {
         if text.trim().is_empty() || text.chars().count() > 4096 || !(8..=128).contains(&size) {
             return Ok(false);
         }
-        let mask = Arc::new(crate::glyphs::raster(text, size)?);
+        let mask = Arc::new(crate::glyphs::raster_font(text, size, font)?);
         let tail = callout.then_some(Point::new(16., mask.height as f64 + 38.));
         let content = Content::Text {
             text: Arc::from(text),
             size,
+            font,
             wrap_width: None,
             mask,
             background,
@@ -960,9 +1175,10 @@ impl Document {
         } else {
             TextLayout::Native
         };
+        let font = self.objects[i].text_font().unwrap_or_default();
         let mask = Arc::new(match layout {
-            TextLayout::Native => crate::glyphs::wrapped(text, size, width)?,
-            TextLayout::DotNet { .. } => crate::glyphs::dotnet_text(text, size, width)?,
+            TextLayout::Native => crate::glyphs::wrapped_font(text, size, width, font)?,
+            TextLayout::DotNet { .. } => crate::glyphs::dotnet_text_font(text, size, width, font)?,
         });
         let background = self.objects[i].text_background().unwrap();
         let tail = if let Content::Text { tail, .. } = self.objects[i].content {
@@ -980,6 +1196,7 @@ impl Document {
         let content = Content::Text {
             text: Arc::from(text),
             size,
+            font,
             wrap_width: width,
             mask,
             background,
@@ -1143,16 +1360,21 @@ impl Document {
     pub fn is_project_saved(&self) -> bool {
         self.project_saved == Some(self.revision)
     }
-    fn snapshot(&self) -> Snapshot {
+    fn snapshot(&self, restore_selection: bool) -> Snapshot {
         Snapshot {
             crop: self.crop,
             source_clip: self.source_clip,
             objects: self.objects.clone(),
+            selected: self.selected,
+            restore_selection,
             revision: self.revision,
         }
     }
     pub(crate) fn begin_edit(&mut self) {
-        self.undo.push(self.snapshot());
+        self.begin_edit_with_selection(false);
+    }
+    fn begin_edit_with_selection(&mut self, restore_selection: bool) {
+        self.undo.push(self.snapshot(restore_selection));
         if self.undo.len() > 64 {
             self.undo.remove(0);
         }
@@ -1164,6 +1386,9 @@ impl Document {
         self.crop = s.crop;
         self.source_clip = s.source_clip;
         self.objects = s.objects;
+        if s.restore_selection {
+            self.selected = s.selected;
+        }
         self.revision = s.revision;
         if !self.objects.iter().any(|o| Some(o.id) == self.selected) {
             self.selected = None;
@@ -1231,7 +1456,7 @@ impl Document {
         let Some(s) = self.undo.pop() else {
             return false;
         };
-        self.redo.push(self.snapshot());
+        self.redo.push(self.snapshot(s.restore_selection));
         self.restore(s);
         true
     }
@@ -1320,6 +1545,83 @@ impl Document {
         self.objects[i] = proposal;
         true
     }
+    pub fn set_line_points(&mut self, points: Arc<Vec<Point>>) -> bool {
+        let Some(i) = self.objects.iter().position(|object| {
+            Some(object.id) == self.selected && matches!(object.tool, Tool::Line | Tool::Arrow)
+        }) else {
+            return false;
+        };
+        if !(2..=3).contains(&points.len())
+            || points.iter().any(|point| {
+                !point.x.is_finite()
+                    || !point.y.is_finite()
+                    || point.x.abs() > 32767.
+                    || point.y.abs() > 32767.
+            })
+            || (points[0].x - points[1].x).hypot(points[0].y - points[1].y) < 1.
+            || self.objects[i].points == points
+        {
+            return false;
+        }
+        self.begin_edit();
+        self.objects[i].points = points;
+        true
+    }
+    pub fn set_path_points(&mut self, points: Arc<Vec<Point>>) -> bool {
+        let Some(i) = self.objects.iter().position(|object| {
+            Some(object.id) == self.selected && matches!(object.tool, Tool::Pen | Tool::Highlighter)
+        }) else {
+            return false;
+        };
+        if points.is_empty()
+            || points.len() > 100_000
+            || points.iter().any(|point| {
+                !point.x.is_finite()
+                    || !point.y.is_finite()
+                    || point.x.abs() > 32767.
+                    || point.y.abs() > 32767.
+            })
+            || self.objects[i].points == points
+        {
+            return false;
+        }
+        self.begin_edit();
+        self.objects[i].points = points;
+        true
+    }
+    pub fn resize_step(&mut self, center: Point, diameter: u32) -> Result<bool, String> {
+        let Some(i) = self.objects.iter().position(|object| {
+            Some(object.id) == self.selected
+                && object.tool == Tool::Step
+                && object.rendering == PathRendering::Native
+        }) else {
+            return Ok(false);
+        };
+        if !center.x.is_finite()
+            || !center.y.is_finite()
+            || center.x.abs() > 32767.
+            || center.y.abs() > 32767.
+            || !(20..=120).contains(&diameter)
+            || self.objects[i].parameter() == diameter
+        {
+            return Ok(false);
+        }
+        let Content::Step { number, .. } = self.objects[i].content else {
+            return Ok(false);
+        };
+        let content = Content::Step {
+            number,
+            diameter,
+            mask: Arc::new(crate::glyphs::step(number, diameter)?),
+        };
+        if !self.permits_mask(&content) {
+            return Err("Annotation memory limit reached.".into());
+        }
+        self.begin_edit();
+        self.objects[i].points = Arc::new(vec![center]);
+        self.objects[i].content = content;
+        Ok(true)
+    }
     pub fn reset_curve(&mut self) -> bool {
         let Some(i) = self.objects.iter().position(|o| {
             Some(o.id) == self.selected
@@ -1344,7 +1646,7 @@ impl Document {
         let Some(s) = self.redo.pop() else {
             return false;
         };
-        self.undo.push(self.snapshot());
+        self.undo.push(self.snapshot(s.restore_selection));
         self.restore(s);
         true
     }
@@ -1374,6 +1676,108 @@ impl Document {
         self.selected = None;
         true
     }
+
+    pub fn duplicate_selected(&mut self) -> Result<bool, String> {
+        let Some(index) = self
+            .objects
+            .iter()
+            .position(|object| Some(object.id) == self.selected)
+        else {
+            return Ok(false);
+        };
+        let root = self.objects[index].clone();
+        let source_indices: Vec<_> = self
+            .objects
+            .iter()
+            .enumerate()
+            .filter_map(|(candidate, object)| {
+                (object.id == root.id || self.is_descendant(object.id, root.id))
+                    .then_some(candidate)
+            })
+            .collect();
+        let count = source_indices.len();
+        if count == 0
+            || self.objects.len().checked_add(count).is_none()
+            || self.objects.len() + count > 2000
+        {
+            return Err("Cannot duplicate this object within the editor limits.".into());
+        }
+        let source_points: usize = source_indices
+            .iter()
+            .map(|candidate| self.objects[*candidate].points.len())
+            .sum();
+        let existing_points: usize = self.objects.iter().map(|object| object.points.len()).sum();
+        if existing_points.checked_add(source_points).is_none()
+            || existing_points + source_points > 1_000_000
+        {
+            return Err("Cannot duplicate this object within the editor limits.".into());
+        }
+        let next_after = self
+            .next
+            .checked_add(count as u64)
+            .filter(|next| *next < u64::MAX)
+            .ok_or("Object identity limit reached.")?;
+        let mut remap = std::collections::HashMap::with_capacity(count);
+        for (offset, candidate) in source_indices.iter().enumerate() {
+            remap.insert(self.objects[*candidate].id, self.next + offset as u64);
+        }
+        let scale = self.parent_transform(root.id).scale;
+        let step = 16. / scale;
+        let (a, b) = root.bounds();
+        let canvas = self.local_canvas(root.id);
+        let offset = Point::new(
+            duplicate_axis_offset(a.x, b.x, canvas.x as f64, canvas.right() as f64, step),
+            duplicate_axis_offset(a.y, b.y, canvas.y as f64, canvas.bottom() as f64, step),
+        );
+        let mut duplicates = Vec::with_capacity(count);
+        for candidate in &source_indices {
+            let source = &self.objects[*candidate];
+            let mut duplicate = source.clone();
+            duplicate.id = remap[&source.id];
+            duplicate.parent = if source.id == root.id {
+                source.parent
+            } else {
+                Some(
+                    *source
+                        .parent
+                        .and_then(|parent| remap.get(&parent))
+                        .ok_or("Duplicate ownership is incomplete.")?,
+                )
+            };
+            if source.id == root.id {
+                duplicate.points = Arc::new(
+                    source
+                        .points
+                        .iter()
+                        .map(|point| Point::new(point.x + offset.x, point.y + offset.y))
+                        .collect(),
+                );
+            }
+            if duplicate.points.iter().any(|point| {
+                !point.x.is_finite()
+                    || !point.y.is_finite()
+                    || point.x.abs() > 32767.
+                    || point.y.abs() > 32767.
+            }) || !self.permits_mask(&duplicate.content)
+            {
+                return Err("Cannot duplicate this object within the editor limits.".into());
+            }
+            duplicates.push(duplicate);
+        }
+        let insert_at = source_indices.iter().copied().max().unwrap() + 1;
+        let mut proposed = self.objects.clone();
+        proposed.splice(insert_at..insert_at, duplicates.iter().cloned());
+        if crate::combine::validate_tree(&proposed).is_err() {
+            return Err("Cannot duplicate this object within the editor limits.".into());
+        }
+        self.begin_edit_with_selection(true);
+        debug_assert_eq!(self.revision, duplicates[0].id);
+        self.next = next_after;
+        self.objects.splice(insert_at..insert_at, duplicates);
+        self.selected = remap.get(&root.id).copied();
+        Ok(true)
+    }
+
     pub fn move_selected(&mut self, dx: f64, dy: f64) -> bool {
         if !dx.is_finite() || !dy.is_finite() || (dx.abs() < 0.001 && dy.abs() < 0.001) {
             return false;
@@ -1591,6 +1995,229 @@ impl View {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duplicate_selected_copies_editable_object_above_source_with_new_identity() {
+        let mut d = Document::new(200, 160);
+        assert!(d.add_patterned(
+            Tool::Line,
+            vec![Point::new(20., 30.), Point::new(80., 70.)],
+            Style {
+                rgb: [12, 34, 56],
+                width: 7,
+            },
+            Pattern::Dashed,
+        ));
+        assert!(d.set_opacity(65));
+        let source = d.objects[0].clone();
+        let revision = d.revision;
+
+        assert!(d.duplicate_selected().unwrap());
+
+        assert_eq!(d.objects.len(), 2);
+        assert_eq!(d.objects[0], source);
+        let copy = &d.objects[1];
+        assert_ne!(copy.id, source.id);
+        assert_eq!(copy.parent, source.parent);
+        assert_eq!(copy.tool, source.tool);
+        assert_eq!(copy.style, source.style);
+        assert_eq!(copy.pattern, source.pattern);
+        assert_eq!(copy.opacity, source.opacity);
+        assert_eq!(copy.content, source.content);
+        assert_eq!(copy.points[0], Point::new(36., 46.));
+        assert_eq!(copy.points[1], Point::new(96., 86.));
+        assert_eq!(d.selected, Some(copy.id));
+        let copy_id = copy.id;
+        assert_ne!(d.revision, revision);
+        assert!(d.undo());
+        assert_eq!(d.objects, vec![source]);
+        assert_eq!(d.selected, Some(d.objects[0].id));
+        assert!(d.redo());
+        assert_eq!(d.objects.len(), 2);
+        assert_eq!(d.selected, Some(copy_id));
+    }
+
+    #[test]
+    fn duplicate_selected_group_remaps_the_complete_editable_subtree_atomically() {
+        let canvas = Rect::new(0, 0, 100, 80).unwrap();
+        let frame = Arc::new(crate::frame::Frame::new(100, 80, vec![255; 100 * 80 * 4]).unwrap());
+        let root = Annotation {
+            id: 10,
+            parent: None,
+            tool: Tool::Image,
+            points: Arc::new(vec![Point::new(10., 20.), Point::new(110., 100.)]),
+            style: Style::default(),
+            pattern: Pattern::Solid,
+            rendering: PathRendering::Native,
+            content: Content::Group {
+                image: Arc::new(crate::combine::ImageGroup {
+                    frame: frame.clone(),
+                    canvas,
+                    source_clip: Some(canvas),
+                    viewport: canvas.into(),
+                }),
+            },
+            opacity: 80,
+            effects: Default::default(),
+        };
+        let child = Annotation {
+            id: 11,
+            parent: Some(10),
+            tool: Tool::Arrow,
+            points: Arc::new(vec![Point::new(5., 6.), Point::new(30., 40.)]),
+            style: Style {
+                rgb: [4, 5, 6],
+                width: 3,
+            },
+            pattern: Pattern::Dotted,
+            rendering: PathRendering::Native,
+            content: Content::Shape,
+            opacity: 70,
+            effects: Default::default(),
+        };
+        let sibling = Annotation {
+            id: 20,
+            parent: None,
+            tool: Tool::Rectangle,
+            points: Arc::new(vec![Point::new(120., 20.), Point::new(150., 50.)]),
+            style: Style::default(),
+            pattern: Pattern::Solid,
+            rendering: PathRendering::Native,
+            content: Content::Shape,
+            opacity: 100,
+            effects: Default::default(),
+        };
+        let mut d = Document::from_project(
+            Rect::new(0, 0, 200, 160).unwrap(),
+            None,
+            vec![root.clone(), child.clone(), sibling.clone()],
+        )
+        .unwrap();
+        d.selected = Some(root.id);
+
+        assert!(d.duplicate_selected().unwrap());
+
+        assert_eq!(d.objects.len(), 5);
+        assert_eq!(&d.objects[..2], &[root.clone(), child.clone()]);
+        assert_eq!(d.objects[4], sibling);
+        let copied_root = &d.objects[2];
+        let copied_child = &d.objects[3];
+        assert_ne!(copied_root.id, root.id);
+        assert_ne!(copied_child.id, child.id);
+        assert_eq!(copied_root.parent, None);
+        assert_eq!(copied_child.parent, Some(copied_root.id));
+        assert_eq!(copied_root.points[0], Point::new(26., 36.));
+        assert_eq!(copied_root.points[1], Point::new(126., 116.));
+        assert_eq!(copied_child.points, child.points);
+        assert_eq!(copied_child.style, child.style);
+        assert_eq!(copied_child.pattern, child.pattern);
+        assert!(matches!(copied_root.content, Content::Group { .. }));
+        if let Content::Group { image } = &copied_root.content {
+            assert!(Arc::ptr_eq(&image.frame, &frame));
+        }
+        assert_eq!(d.selected, Some(copied_root.id));
+
+        assert!(d.undo());
+        assert_eq!(d.objects, vec![root, child, sibling]);
+        assert!(d.redo());
+        assert_eq!(d.objects.len(), 5);
+    }
+
+    #[test]
+    fn duplicate_selected_offsets_inward_when_the_preferred_copy_is_outside_canvas() {
+        let mut d = Document::new(200, 160);
+        assert!(d.add(
+            Tool::Line,
+            vec![Point::new(190., 145.), Point::new(199., 159.)],
+            Style::default(),
+        ));
+
+        assert!(d.duplicate_selected().unwrap());
+
+        assert_eq!(d.objects[1].points[0], Point::new(174., 129.));
+        assert_eq!(d.objects[1].points[1], Point::new(183., 143.));
+    }
+
+    #[test]
+    fn duplicate_selected_supports_every_editable_object_kind_without_flattening() {
+        let verify = |mut document: Document| {
+            let source = document.objects.last().unwrap().clone();
+            assert!(document.duplicate_selected().unwrap(), "{:?}", source.tool);
+            let duplicate = document
+                .objects
+                .iter()
+                .find(|object| Some(object.id) == document.selected)
+                .unwrap();
+            assert_ne!(duplicate.id, source.id);
+            assert_eq!(duplicate.tool, source.tool);
+            assert_eq!(duplicate.content, source.content);
+            assert_eq!(duplicate.style, source.style);
+            assert_eq!(duplicate.pattern, source.pattern);
+            assert_eq!(duplicate.opacity, source.opacity);
+            assert_eq!(duplicate.effects, source.effects);
+        };
+
+        for tool in [
+            Tool::Pen,
+            Tool::Highlighter,
+            Tool::Line,
+            Tool::Arrow,
+            Tool::Rectangle,
+            Tool::Ellipse,
+            Tool::FilledRectangle,
+            Tool::FilledEllipse,
+        ] {
+            let mut document = Document::new(400, 300);
+            assert!(document.add_patterned(
+                tool,
+                vec![Point::new(20., 30.), Point::new(100., 90.)],
+                Style::default(),
+                Pattern::Dotted,
+            ));
+            verify(document);
+        }
+
+        let mut text = Document::new(400, 300);
+        text.add_text(Point::new(20., 30.), "Editable", 24, Style::default())
+            .unwrap();
+        verify(text);
+
+        let mut callout = Document::new(400, 300);
+        callout
+            .add_callout(
+                Point::new(20., 30.),
+                "Callout",
+                24,
+                Style::default(),
+                Background::default(),
+            )
+            .unwrap();
+        verify(callout);
+
+        let mut step = Document::new(400, 300);
+        step.add_step(Point::new(40., 40.), 36, Style::default())
+            .unwrap();
+        verify(step);
+
+        let mut blur = Document::new(400, 300);
+        assert!(blur.add_blur(Point::new(20., 30.), Point::new(100., 90.), 12));
+        verify(blur);
+
+        let frame = Arc::new(crate::frame::Frame::new(40, 30, vec![127; 40 * 30 * 4]).unwrap());
+        let mut image = Document::new(400, 300);
+        image.add_image(frame.clone()).unwrap();
+        assert!(image.move_selected(20., 30.));
+        image.duplicate_selected().unwrap();
+        let Content::Image { frame: source } = &image.objects[0].content else {
+            panic!("expected source image");
+        };
+        let Content::Image { frame: duplicate } = &image.objects[1].content else {
+            panic!("expected duplicate image");
+        };
+        assert!(Arc::ptr_eq(source, duplicate));
+        assert!(Arc::ptr_eq(source, &frame));
+    }
+
     #[test]
     fn curved_arrow_bounds_include_the_tangent_oriented_head() {
         let mut d = Document::new(200, 200);
@@ -2157,6 +2784,7 @@ mod tests {
             Content::Text {
                 text: Arc::from("A"),
                 size: 24,
+                font: FontFamily::default(),
                 wrap_width: None,
                 background: Default::default(),
                 tail: None,
@@ -2234,6 +2862,7 @@ mod tests {
             Content::Text {
                 text: Arc::from("A"),
                 size: 24,
+                font: FontFamily::default(),
                 wrap_width: None,
                 background: Default::default(),
                 tail: None,

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SnapZy Rust",
+  "version": "0.15.0-alpha.5",
+  "identifier": "com.jairlinethai.snapzy.rust",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:51819",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../web-dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{
+      "label": "main",
+      "title": "SnapZy 0.15.0-alpha.5",
+      "width": 424,
+      "height": 254,
+      "minWidth": 390,
+      "minHeight": 254,
+      "resizable": false,
+      "maximizable": false,
+      "theme": "Light",
+      "center": true,
+      "backgroundColor": "#ffffff"
+    }],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' asset: data: blob:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; connect-src ipc: http://ipc.localhost http://127.0.0.1:51819 ws://127.0.0.1:51819; object-src 'none'; base-uri 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "jairlinethai",
+    "icon": ["../../../assets/snapzy-rust.ico"],
+    "resources": { "resources/engine/": "engine/" },
+    "windows": {
+      "allowDowngrades": false,
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "./windows/installer-hooks.nsh",
+        "startMenuFolder": "SnapZy Rust",
+        "installerIcon": "../../../assets/snapzy-rust.ico",
+        "uninstallerIcon": "../../../assets/snapzy-rust.ico"
+      }
+    }
+  }
+}

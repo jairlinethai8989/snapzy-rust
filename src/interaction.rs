@@ -1,4 +1,4 @@
-use crate::editor::{Annotation, Background, Document, Pattern, Point, Style, Tool};
+use crate::editor::{Annotation, Background, Document, FontFamily, Pattern, Point, Style, Tool};
 use crate::frame::Rect;
 
 #[cfg(test)]
@@ -55,8 +55,12 @@ pub struct Session {
     pub shape_resize: Option<crate::shape_frame::Resize>,
     pub tail_drag: Option<TailDrag>,
     pub curve_drag: Option<TailDrag>,
+    pub line_endpoint_drag: Option<LineEndpointDrag>,
+    pub path_resize: Option<PathResize>,
+    pub step_resize: Option<StepResize>,
     pub pattern: Pattern,
     pub background: Background,
+    pub text_font: FontFamily,
     pub text_size: u32,
     pub step_diameter: u32,
     pub blur_strength: u32,
@@ -66,6 +70,123 @@ pub struct Session {
 pub struct TailDrag {
     pub start: Point,
     pub end: Point,
+}
+pub struct LineEndpointDrag {
+    pub original: crate::editor::Annotation,
+    pub index: usize,
+    pub start: Point,
+    pub end: Point,
+}
+impl LineEndpointDrag {
+    fn draft(&self) -> Option<crate::editor::Annotation> {
+        if self.start == self.end || ![self.end.x, self.end.y].iter().all(|v| v.is_finite()) {
+            return None;
+        }
+        let mut points = self.original.points.as_ref().clone();
+        if self.index > 1 || points.len() < 2 {
+            return None;
+        }
+        points[self.index] = self.end;
+        if (points[0].x - points[1].x).hypot(points[0].y - points[1].y) < 1. {
+            return None;
+        }
+        let mut draft = self.original.clone();
+        draft.points = std::sync::Arc::new(points);
+        Some(draft)
+    }
+}
+pub struct PathResize {
+    pub original: crate::editor::Annotation,
+    pub handle: crate::shape_frame::Handle,
+    pub start: Point,
+    pub end: Point,
+}
+impl PathResize {
+    fn draft(&self) -> Option<crate::editor::Annotation> {
+        if !matches!(self.original.tool, Tool::Pen | Tool::Highlighter) {
+            return None;
+        }
+        let old = self.original.bounds();
+        let new = crate::shape_frame::resized_bounds(
+            old,
+            self.handle,
+            self.end.x - self.start.x,
+            self.end.y - self.start.y,
+        )?;
+        let old_width = old.1.x - old.0.x;
+        let old_height = old.1.y - old.0.y;
+        if old_width < 1. || old_height < 1. {
+            return None;
+        }
+        let scale_x = (new.1.x - new.0.x) / old_width;
+        let scale_y = (new.1.y - new.0.y) / old_height;
+        let points = self
+            .original
+            .points
+            .iter()
+            .map(|point| {
+                Point::new(
+                    new.0.x + (point.x - old.0.x) * scale_x,
+                    new.0.y + (point.y - old.0.y) * scale_y,
+                )
+            })
+            .collect();
+        let mut draft = self.original.clone();
+        draft.points = std::sync::Arc::new(points);
+        Some(draft)
+    }
+}
+pub struct StepResize {
+    pub original: crate::editor::Annotation,
+    pub handle: crate::shape_frame::Handle,
+    pub start: Point,
+    pub end: Point,
+}
+impl StepResize {
+    fn proposal(&self) -> Option<(Point, u32)> {
+        use crate::shape_frame::Handle;
+        if self.original.tool != Tool::Step
+            || !matches!(
+                self.handle,
+                Handle::TopLeft | Handle::TopRight | Handle::BottomRight | Handle::BottomLeft
+            )
+            || self.start == self.end
+        {
+            return None;
+        }
+        let (a, b) = self.original.bounds();
+        let (corner, anchor) = match self.handle {
+            Handle::TopLeft => (a, b),
+            Handle::TopRight => (Point::new(b.x, a.y), Point::new(a.x, b.y)),
+            Handle::BottomRight => (b, a),
+            Handle::BottomLeft => (Point::new(a.x, b.y), Point::new(b.x, a.y)),
+            _ => return None,
+        };
+        let original_vector = Point::new(corner.x - anchor.x, corner.y - anchor.y);
+        let target_vector = Point::new(self.end.x - anchor.x, self.end.y - anchor.y);
+        let denominator =
+            original_vector.x * original_vector.x + original_vector.y * original_vector.y;
+        if denominator <= 0. || !target_vector.x.is_finite() || !target_vector.y.is_finite() {
+            return None;
+        }
+        let scale = ((target_vector.x * original_vector.x + target_vector.y * original_vector.y)
+            / denominator)
+            .max(0.);
+        let original_diameter = self.original.parameter();
+        let diameter = (original_diameter as f64 * scale).round().clamp(20., 120.) as u32;
+        if diameter == original_diameter {
+            return None;
+        }
+        let applied = diameter as f64 / original_diameter as f64;
+        let moved = Point::new(
+            anchor.x + original_vector.x * applied,
+            anchor.y + original_vector.y * applied,
+        );
+        Some((
+            Point::new((anchor.x + moved.x) / 2., (anchor.y + moved.y) / 2.),
+            diameter,
+        ))
+    }
 }
 impl Session {
     pub fn new(w: u32, h: u32) -> Self {
@@ -89,8 +210,12 @@ impl Session {
             shape_resize: None,
             tail_drag: None,
             curve_drag: None,
+            line_endpoint_drag: None,
+            path_resize: None,
+            step_resize: None,
             pattern: Pattern::Solid,
             background: Background::default(),
+            text_font: FontFamily::default(),
             text_size: 24,
             step_diameter: 36,
             blur_strength: 8,
@@ -101,6 +226,38 @@ impl Session {
     pub fn press(&mut self, p: Point, tolerance: f64) {
         self.cancel();
         let local = self.selected_transform().inverse(p);
+        if let Some(handle) = self.step_handle(p, tolerance) {
+            let original = self
+                .document
+                .objects
+                .iter()
+                .find(|o| Some(o.id) == self.document.selected)
+                .unwrap()
+                .clone();
+            self.step_resize = Some(StepResize {
+                original,
+                handle,
+                start: local,
+                end: local,
+            });
+            return;
+        }
+        if let Some(handle) = self.path_handle(p, tolerance) {
+            let original = self
+                .document
+                .objects
+                .iter()
+                .find(|o| Some(o.id) == self.document.selected)
+                .unwrap()
+                .clone();
+            self.path_resize = Some(PathResize {
+                original,
+                handle,
+                start: local,
+                end: local,
+            });
+            return;
+        }
         if let Some(handle) = self.shape_handle(p, tolerance) {
             let original = self
                 .document
@@ -112,6 +269,22 @@ impl Session {
             self.shape_resize = Some(crate::shape_frame::Resize {
                 original,
                 handle,
+                start: local,
+                end: local,
+            });
+            return;
+        }
+        if let Some(index) = self.line_endpoint_handle(p, tolerance) {
+            let original = self
+                .document
+                .objects
+                .iter()
+                .find(|o| Some(o.id) == self.document.selected)
+                .unwrap()
+                .clone();
+            self.line_endpoint_drag = Some(LineEndpointDrag {
+                original,
+                index,
                 start: local,
                 end: local,
             });
@@ -165,6 +338,9 @@ impl Session {
     pub fn update(&mut self, p: Point) -> bool {
         let p = if self.shape_resize.is_some()
             || self.curve_drag.is_some()
+            || self.line_endpoint_drag.is_some()
+            || self.path_resize.is_some()
+            || self.step_resize.is_some()
             || self.tail_drag.is_some()
             || self.resize.is_some()
         {
@@ -179,7 +355,28 @@ impl Session {
             r.end = p;
             return true;
         }
+        if let Some(r) = &mut self.path_resize {
+            if r.end == p {
+                return false;
+            }
+            r.end = p;
+            return true;
+        }
+        if let Some(r) = &mut self.step_resize {
+            if r.end == p {
+                return false;
+            }
+            r.end = p;
+            return true;
+        }
         if let Some(d) = &mut self.curve_drag {
+            if d.end == p {
+                return false;
+            }
+            d.end = p;
+            return true;
+        }
+        if let Some(d) = &mut self.line_endpoint_drag {
             if d.end == p {
                 return false;
             }
@@ -224,6 +421,23 @@ impl Session {
                 .draft()
                 .is_some_and(|o| self.document.resize_shape(o.bounds()));
         }
+        if let Some(resize) = self.path_resize.take() {
+            return resize
+                .draft()
+                .is_some_and(|draft| self.document.set_path_points(draft.points));
+        }
+        if let Some(resize) = self.step_resize.take() {
+            return match resize.proposal() {
+                Some((center, diameter)) => match self.document.resize_step(center, diameter) {
+                    Ok(changed) => changed,
+                    Err(error) => {
+                        self.error = Some(error);
+                        false
+                    }
+                },
+                None => false,
+            };
+        }
         if let Some(proposal) = self.curve_draft() {
             self.curve_drag = None;
             return self
@@ -232,6 +446,11 @@ impl Session {
         }
         if self.curve_drag.take().is_some() {
             return false;
+        }
+        if let Some(drag) = self.line_endpoint_drag.take() {
+            return drag
+                .draft()
+                .is_some_and(|draft| self.document.set_line_points(draft.points));
         }
         if let Some(d) = self.tail_drag.take() {
             if d.start == d.end {
@@ -253,7 +472,18 @@ impl Session {
         }
         if let Some(r) = self.resize.take() {
             if r.original.tool == Tool::Image {
-                return self.document.resize_image(r.bounds());
+                let preserve_aspect = !matches!(
+                    r.handle,
+                    crate::text_frame::Handle::Left
+                        | crate::text_frame::Handle::Right
+                        | crate::text_frame::Handle::Top
+                        | crate::text_frame::Handle::Bottom
+                );
+                return if preserve_aspect {
+                    self.document.resize_image(r.bounds())
+                } else {
+                    self.document.resize_image_free(r.bounds())
+                };
             }
             let Some(p) = r.proposal() else {
                 return false;
@@ -356,6 +586,133 @@ impl Session {
         self.shape_resize = None;
         self.tail_drag = None;
         self.curve_drag = None;
+        self.line_endpoint_drag = None;
+        self.path_resize = None;
+        self.step_resize = None;
+    }
+    pub fn step_handles(&self) -> Vec<(crate::shape_frame::Handle, Point)> {
+        use crate::shape_frame::Handle;
+        if !(self.tool == Tool::Select || self.tool == Tool::Step) {
+            return vec![];
+        }
+        let Some(object) =
+            self.document.objects.iter().find(|object| {
+                Some(object.id) == self.document.selected && object.tool == Tool::Step
+            })
+        else {
+            return vec![];
+        };
+        let transform = self.selected_transform();
+        let mut visible = self
+            .step_resize
+            .as_ref()
+            .and_then(StepResize::proposal)
+            .map(|(center, diameter)| {
+                let radius = diameter as f64 / 2.;
+                (
+                    Point::new(center.x - radius, center.y - radius),
+                    Point::new(center.x + radius, center.y + radius),
+                )
+            })
+            .unwrap_or_else(|| object.bounds());
+        if let Some((dx, dy)) = self.selection_move_delta_local() {
+            visible.0.x += dx;
+            visible.0.y += dy;
+            visible.1.x += dx;
+            visible.1.y += dy;
+        }
+        crate::shape_frame::positions(visible)
+            .into_iter()
+            .filter(|(handle, _)| {
+                matches!(
+                    handle,
+                    Handle::TopLeft | Handle::TopRight | Handle::BottomRight | Handle::BottomLeft
+                )
+            })
+            .map(|(handle, point)| (handle, transform.point(point)))
+            .collect()
+    }
+    pub fn step_handle(&self, point: Point, radius: f64) -> Option<crate::shape_frame::Handle> {
+        if !radius.is_finite() || radius < 0. {
+            return None;
+        }
+        self.step_handles()
+            .into_iter()
+            .find(|(_, handle)| {
+                (handle.x - point.x).abs() <= radius && (handle.y - point.y).abs() <= radius
+            })
+            .map(|(handle, _)| handle)
+    }
+    pub fn path_draft(&self) -> Option<crate::editor::Annotation> {
+        self.path_resize.as_ref()?.draft()
+    }
+    pub fn path_handles(&self) -> Vec<(crate::shape_frame::Handle, Point)> {
+        if !(self.tool == Tool::Select || matches!(self.tool, Tool::Pen | Tool::Highlighter))
+            || self
+                .gesture
+                .as_ref()
+                .is_some_and(|gesture| gesture.tool != Tool::Select)
+        {
+            return vec![];
+        }
+        let Some(object) = self.document.objects.iter().find(|object| {
+            Some(object.id) == self.document.selected
+                && matches!(object.tool, Tool::Pen | Tool::Highlighter)
+        }) else {
+            return vec![];
+        };
+        let draft = self.path_draft();
+        let visible = draft.as_ref().unwrap_or(object);
+        let (mut start, mut end) = visible.bounds();
+        if end.x - start.x < 1. || end.y - start.y < 1. {
+            return vec![];
+        }
+        if let Some((dx, dy)) = self.selection_move_delta_local() {
+            start.x += dx;
+            start.y += dy;
+            end.x += dx;
+            end.y += dy;
+        }
+        let transform = self.selected_transform();
+        crate::shape_frame::positions((start, end))
+            .into_iter()
+            .map(|(role, point)| (role, transform.point(point)))
+            .collect()
+    }
+    pub fn path_handle(&self, point: Point, radius: f64) -> Option<crate::shape_frame::Handle> {
+        if !radius.is_finite() || radius < 0. {
+            return None;
+        }
+        self.path_handles()
+            .into_iter()
+            .find(|(_, handle)| {
+                (handle.x - point.x).abs() <= radius && (handle.y - point.y).abs() <= radius
+            })
+            .map(|(role, _)| role)
+    }
+    pub fn line_endpoint_draft(&self) -> Option<crate::editor::Annotation> {
+        self.line_endpoint_drag.as_ref()?.draft()
+    }
+    pub fn line_endpoint_handle(&self, point: Point, radius: f64) -> Option<usize> {
+        if !matches!(self.tool, Tool::Select | Tool::Line | Tool::Arrow)
+            || !radius.is_finite()
+            || radius < 0.
+        {
+            return None;
+        }
+        let object = self.document.objects.iter().find(|object| {
+            Some(object.id) == self.document.selected
+                && matches!(object.tool, Tool::Line | Tool::Arrow)
+        })?;
+        let transform = self.selected_transform();
+        object.points[..2]
+            .iter()
+            .map(|point| transform.point(*point))
+            .enumerate()
+            .find(|(_, handle)| {
+                (handle.x - point.x).abs() <= radius && (handle.y - point.y).abs() <= radius
+            })
+            .map(|(index, _)| index)
     }
     pub fn curve_handle_position(&self) -> Option<Point> {
         if !matches!(self.tool, Tool::Select | Tool::Line | Tool::Arrow)
@@ -494,6 +851,22 @@ impl Session {
             .and_then(|o| o.text_background())
             .unwrap_or(self.background)
     }
+    pub fn font(&self) -> FontFamily {
+        self.document
+            .objects
+            .iter()
+            .find(|object| Some(object.id) == self.document.selected)
+            .and_then(|object| object.text_font())
+            .unwrap_or(self.text_font)
+    }
+    pub fn set_font(&mut self, font: FontFamily) -> Result<bool, String> {
+        self.cancel();
+        if self.document.selected.is_none() {
+            self.text_font = font;
+            return Ok(false);
+        }
+        self.document.set_text_font(font)
+    }
     pub fn set_background(&mut self, background: Background) {
         self.cancel();
         self.background = background;
@@ -545,11 +918,11 @@ impl Session {
         }
         crate::text_frame::positions(o.bounds())
             .into_iter()
-            .filter(|(h, _)| {
-                o.tool != Tool::Image
+            .filter(|(handle, _)| {
+                o.tool == Tool::Image
                     || !matches!(
-                        h,
-                        crate::text_frame::Handle::Left | crate::text_frame::Handle::Right
+                        handle,
+                        crate::text_frame::Handle::Top | crate::text_frame::Handle::Bottom
                     )
             })
             .find(|(_, p)| {
@@ -600,6 +973,17 @@ impl Session {
             .selected
             .map(|id| self.document.parent_transform(id))
             .unwrap_or_default()
+    }
+    pub fn selection_move_delta_local(&self) -> Option<(f64, f64)> {
+        let gesture = self
+            .gesture
+            .as_ref()
+            .filter(|gesture| gesture.tool == Tool::Select && gesture.start != gesture.end)?;
+        let scale = self.selected_transform().scale;
+        Some((
+            (gesture.end.x - gesture.start.x) / scale,
+            (gesture.end.y - gesture.start.y) / scale,
+        ))
     }
     pub fn shape_choices(&self) -> [Tool; 2] {
         [self.outline_shape, self.filled_shape]
@@ -924,6 +1308,30 @@ mod tests {
             Some(Point::new(50., 30.))
         );
     }
+
+    #[test]
+    fn line_endpoint_drag_preserves_curve_and_does_not_draw_a_new_line() {
+        let mut s = Session::new(200, 120);
+        s.choose(Tool::Line);
+        s.press(Point::new(10., 20.), 3.);
+        assert!(s.release(Point::new(110., 60.)));
+        s.press(Point::new(60., 40.), 3.);
+        assert!(s.release(Point::new(60., 80.)));
+        let curved = s.document.objects[0].clone();
+        assert_eq!(curved.points.len(), 3);
+
+        s.press(Point::new(10., 20.), 3.);
+        s.update(Point::new(24., 30.));
+        assert_eq!(s.document.objects.len(), 1);
+        assert!(s.release(Point::new(24., 30.)));
+        assert_eq!(s.document.objects.len(), 1);
+        assert_eq!(s.document.objects[0].points[0], Point::new(24., 30.));
+        assert_eq!(s.document.objects[0].points[1], curved.points[1]);
+        assert_eq!(s.document.objects[0].points[2], curved.points[2]);
+
+        assert!(s.document.undo());
+        assert_eq!(s.document.objects[0], curved);
+    }
     #[test]
     fn curve_drag_cancel_and_no_motion_preserve_committed_revision() {
         let mut s = Session::new(100, 80);
@@ -1053,6 +1461,33 @@ mod tests {
         assert!(session.document.objects.is_empty());
         assert!(session.document.redo());
         assert_eq!(session.document.objects[0].style.width, 24);
+    }
+
+    #[test]
+    fn freehand_path_resize_scales_points_but_keeps_stroke_style() {
+        let mut s = Session::new(160, 100);
+        s.choose(Tool::Pen);
+        s.press(Point::new(10., 10.), 3.);
+        s.update(Point::new(30., 30.));
+        assert!(s.release(Point::new(50., 10.)));
+        let original = s.document.objects[0].clone();
+        assert_eq!(s.path_handles().len(), 8);
+
+        s.press(Point::new(50., 20.), 3.);
+        s.update(Point::new(90., 20.));
+        assert_eq!(s.document.objects[0], original);
+        assert!(s.release(Point::new(90., 20.)));
+        assert_eq!(
+            s.document.objects[0].points.as_ref(),
+            &[
+                Point::new(10., 10.),
+                Point::new(50., 30.),
+                Point::new(90., 10.)
+            ]
+        );
+        assert_eq!(s.document.objects[0].style, original.style);
+        assert!(s.document.undo());
+        assert_eq!(s.document.objects[0], original);
     }
     use super::*;
     #[test]
@@ -1196,6 +1631,30 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn blur_region_uses_eight_shape_handles_and_one_step_history() {
+        let mut s = Session::new(200, 120);
+        s.choose(Tool::Blur);
+        s.press(Point::new(20., 20.), 3.);
+        assert!(s.release(Point::new(80., 60.)));
+        assert_eq!(s.shape_handles().len(), 8);
+
+        let revision = s.document.revision;
+        s.press(Point::new(80., 40.), 3.);
+        s.update(Point::new(110., 40.));
+        assert_eq!(s.document.revision, revision);
+        assert!(s.release(Point::new(110., 40.)));
+        assert_eq!(
+            s.document.objects[0].bounds(),
+            (Point::new(20., 20.), Point::new(110., 60.))
+        );
+        assert!(s.document.undo());
+        assert_eq!(
+            s.document.objects[0].bounds(),
+            (Point::new(20., 20.), Point::new(80., 60.))
+        );
+    }
     #[test]
     fn hidden_shape_handles_and_invalid_geometry_do_not_mutate_document() {
         let mut s = Session::new(240, 180);
@@ -1276,12 +1735,38 @@ mod tests {
             (Point::new(60., 30.), Point::new(140., 70.))
         );
         assert_eq!(
+            s.resize_handle(Point::new(100., 30.), 4.),
+            Some(crate::text_frame::Handle::Top),
+            "image top and bottom handles must allow intentional height changes"
+        );
+        s.press(Point::new(100., 30.), 4.);
+        assert!(s.release(Point::new(100., 40.)));
+        assert_eq!(
+            s.document.objects[0].bounds(),
+            (Point::new(60., 40.), Point::new(140., 70.))
+        );
+        assert!(s.document.undo());
+        assert_eq!(
+            s.document.objects[0].bounds(),
+            (Point::new(60., 30.), Point::new(140., 70.))
+        );
+        assert_eq!(
             s.resize_handle(Point::new(60., 50.), 4.),
-            None,
-            "images have no stretch-only side handles"
+            Some(crate::text_frame::Handle::Left),
+            "image side handles must allow intentional width changes"
+        );
+        s.press(Point::new(60., 50.), 4.);
+        assert!(s.release(Point::new(80., 50.)));
+        assert_eq!(
+            s.document.objects[0].bounds(),
+            (Point::new(80., 30.), Point::new(140., 70.)),
+            "a side handle changes only one axis"
         );
         s.document.undo();
-        assert_eq!(s.document.revision, rev);
+        assert_eq!(
+            s.document.objects[0].bounds(),
+            (Point::new(60., 30.), Point::new(140., 70.))
+        );
     }
     #[test]
     fn background_toggle_keeps_color_for_new_text_without_editing_shapes() {
@@ -1463,6 +1948,28 @@ mod tests {
         assert_eq!(s.document.objects[1].tool, Tool::Blur);
         s.document.undo();
         assert_eq!(s.document.step_numbers(), [1]);
+    }
+
+    #[test]
+    fn step_corner_resize_stays_circular_and_anchors_the_opposite_corner() {
+        let mut s = Session::new(160, 100);
+        s.choose(Tool::Step);
+        s.press(Point::new(50., 50.), 3.);
+        assert!(s.release(Point::new(50., 50.)));
+        let original = s.document.objects[0].clone();
+        assert_eq!(s.step_handles().len(), 4);
+
+        s.press(Point::new(68., 68.), 3.);
+        s.update(Point::new(86., 86.));
+        assert_eq!(s.document.objects[0], original);
+        assert!(s.release(Point::new(86., 86.)));
+        assert_eq!(
+            s.document.objects[0].bounds(),
+            (Point::new(32., 32.), Point::new(86., 86.))
+        );
+        assert_eq!(s.document.objects[0].parameter(), 54);
+        assert!(s.document.undo());
+        assert_eq!(s.document.objects[0], original);
     }
     #[test]
     fn idle_or_unchanged_pointer_does_not_request_a_redraw() {

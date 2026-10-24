@@ -3,6 +3,7 @@ use crate::{
     clipboard,
     compact_ui::{self, EditorAction, LauncherControl},
     composition::{Guard, Token},
+    desktop_bridge as bridge,
     editor::{Annotation, Content, Point, Tool, View},
     editor_controls as ec,
     frame::{Frame, Rect},
@@ -295,6 +296,7 @@ struct App {
     combine_assets: Vec<Arc<Frame>>,
     project_modal: bool,
     project_exit: Option<project_ui::ExitPlan>,
+    shutdown_committed: bool,
     next_preview: u64,
     next_detection_identity: u64,
     next_video_session: u64,
@@ -754,7 +756,7 @@ fn layout(window: HWND) {
         .iter()
         .enumerate()
         {
-            let cell = compact_ui::editor_tool_rect(index, 38);
+            let cell = compact_ui::editor_tool_rect(index, 38, logical_width.max(780));
             position(window, *id as i32, cell.x, cell.y, cell.width, cell.height);
         }
         for id in [
@@ -1161,6 +1163,11 @@ fn start_capture(mode: Mode) {
         windows.extend(app.ocr_windows.keys().copied());
         windows.extend(app.video_previews.keys().copied());
         windows.push(app.main);
+        if bridge::is_active() {
+            windows.extend(bridge_owner_windows());
+            windows.sort_unstable();
+            windows.dedup();
+        }
         Some((app.main, windows))
     });
     if let Some((main, windows)) = windows {
@@ -1256,6 +1263,7 @@ fn restore_windows() {
             let b = s.borrow();
             let a = b.as_ref().unwrap();
             (a.main == window && identity == 0)
+                || (bridge::is_active() && identity == 0)
                 || a.workspace
                     .hosts
                     .iter()
@@ -1275,6 +1283,45 @@ fn restore_windows() {
     }
     let main = STATE.with(|s| s.borrow().as_ref().unwrap().main) as HWND;
     status(main, &tr("ready"));
+}
+
+struct OwnerWindowSearch {
+    process_id: u32,
+    windows: Vec<usize>,
+}
+
+unsafe extern "system" fn collect_owner_window(window: HWND, context: LPARAM) -> i32 {
+    let search = unsafe { &mut *(context as *mut OwnerWindowSearch) };
+    let mut process_id = 0;
+    unsafe {
+        GetWindowThreadProcessId(window, &mut process_id);
+    }
+    if process_id == search.process_id {
+        search.windows.push(window as usize);
+    }
+    1
+}
+
+fn bridge_owner_windows() -> Vec<usize> {
+    let owner = bridge::owner() as HWND;
+    if owner.is_null() || unsafe { IsWindow(owner) } == 0 {
+        return Vec::new();
+    }
+    let mut process_id = 0;
+    unsafe {
+        GetWindowThreadProcessId(owner, &mut process_id);
+    }
+    if process_id == 0 {
+        return Vec::new();
+    }
+    let mut search = OwnerWindowSearch {
+        process_id,
+        windows: Vec::new(),
+    };
+    unsafe {
+        EnumWindows(Some(collect_owner_window), &mut search as *mut _ as LPARAM);
+    }
+    search.windows
 }
 
 fn show_selection(
@@ -1888,7 +1935,15 @@ fn finish_selection(cancel: bool) {
         }
         restore_windows();
         match result {
-            Some(Ok(frame)) => present(frame, started),
+            Some(Ok(frame)) => present(
+                frame,
+                started,
+                if matches!(selection.mode, Mode::Window) {
+                    bridge::CaptureKind::Window
+                } else {
+                    bridge::CaptureKind::Area
+                },
+            ),
             Some(Err(error)) => {
                 let message = if error.starts_with("Part of this window") {
                     tr("covered")
@@ -2947,7 +3002,7 @@ fn poll_scroll() {
             match image {
                 Ok(frame) => {
                     let unchanged = Some(frame.height) == single;
-                    present(frame, Instant::now());
+                    present(frame, Instant::now(), bridge::CaptureKind::Scrolling);
                     if let Some(n) = notice {
                         notify(null_mut(), scroll_status(n, thai), false);
                     } else if unchanged {
@@ -3191,8 +3246,21 @@ fn open_canvas_entry(owner: HWND) {
     }
 }
 
-fn present(frame: Frame, started: Instant) {
+fn present(frame: Frame, started: Instant, kind: bridge::CaptureKind) {
     let route = STATE.with(|s| s.borrow_mut().as_mut().unwrap().capture_route.take());
+    if bridge::is_active() {
+        let destination = STATE.with(|state| {
+            if state.borrow().as_ref().unwrap().settings.open_mode == settings::OpenMode::Tab {
+                bridge::CaptureDestination::Tab
+            } else {
+                bridge::CaptureDestination::Window
+            }
+        });
+        if let Err(error) = crate::capture_result::emit(&frame, kind, destination) {
+            notify(null_mut(), &error, true);
+        }
+        return;
+    }
     if let Some(route) = route {
         present_project(Arc::new(frame), None, None, started, route);
     }
@@ -5496,7 +5564,7 @@ fn complete_work() {
                     if matches!(mode, Mode::Desktop) {
                         STATE.with(|s| s.borrow_mut().as_mut().unwrap().capture_busy = false);
                         restore_windows();
-                        present(frame, started);
+                        present(frame, started, bridge::CaptureKind::Desktop);
                     } else {
                         show_selection(mode, started, frame, desktop, windows);
                     }
@@ -6174,6 +6242,8 @@ fn exit_app() {
     video_ui::start_exit();
 }
 fn finish_exit() {
+    // Native teardown can dispatch status requests before the process has exited.
+    STATE.with(|s| s.borrow_mut().as_mut().unwrap().shutdown_committed = true);
     video_ui::shutdown_all();
     let (main, windows) = STATE.with(|s| {
         let b = s.borrow();
@@ -6204,6 +6274,91 @@ fn finish_exit() {
         DestroyWindow(main as HWND);
         PostQuitMessage(0);
     }
+}
+
+fn receive_desktop_command(window: HWND, sender: WPARAM, lparam: LPARAM) -> LRESULT {
+    use crate::desktop_bridge::{self as bridge, Action};
+    if !bridge::is_active() || lparam == 0 {
+        return 0;
+    }
+    let data =
+        unsafe { &*(lparam as *const windows_sys::Win32::System::DataExchange::COPYDATASTRUCT) };
+    if data.dwData != bridge::COPYDATA_ID
+        || data.lpData.is_null()
+        || data.cbData as usize > bridge::MAX_REQUEST_BYTES
+    {
+        return 0;
+    }
+    let bytes =
+        unsafe { std::slice::from_raw_parts(data.lpData.cast::<u8>(), data.cbData as usize) };
+    let Ok(request) = bridge::Request::decode(bytes) else {
+        return 0;
+    };
+    if sender != 0 && unsafe { IsWindow(sender as HWND) } != 0 {
+        bridge::set_owner(sender);
+    }
+    let busy = STATE.with(|state| {
+        let state = state.borrow();
+        let app = state.as_ref().unwrap();
+        app.capture_busy
+            || app.pending.is_some()
+            || app.selection.is_some()
+            || app.scrolling.is_some()
+            || app.recording.is_some()
+            || app.composing
+            || app.project_modal
+            || app.project_opening
+            || app.importing
+            || app.settings_window != 0
+            || app.text_entry.is_some()
+            || app.effects_open
+            || app.project_exit.is_some()
+            || app.video_exit.is_some()
+            || app.shutdown_committed
+    });
+    if request.action == Action::Status {
+        return if busy { bridge::BUSY } else { bridge::READY };
+    }
+    if busy && request.action != Action::Shutdown {
+        return bridge::BUSY;
+    }
+    if let Some(preferences) = request.preferences {
+        let mut settings = STATE.with(|s| s.borrow().as_ref().unwrap().settings.clone());
+        settings.language = preferences.language;
+        settings.capture_delay_seconds = preferences.delay_seconds;
+        settings.scroll_automatic = preferences.scroll_automatic;
+        settings.open_mode = if preferences.open_in_tab {
+            settings::OpenMode::Tab
+        } else {
+            settings::OpenMode::Window
+        };
+        let Ok(audio) = serde_json::from_value(serde_json::Value::String(preferences.video_audio))
+        else {
+            return 0;
+        };
+        settings.video_audio = audio;
+        if settings.save().is_err() {
+            return 0;
+        }
+        STATE.with(|s| s.borrow_mut().as_mut().unwrap().settings = settings);
+        refresh_language();
+    }
+    let command = match request.action {
+        Action::Area => AREA,
+        Action::Window => WINDOW,
+        Action::Desktop => DESKTOP,
+        Action::Scrolling => SCROLL,
+        Action::VideoMonitor => VIDEO_MONITOR,
+        Action::VideoWindow => VIDEO_WINDOW,
+        Action::Open => ec::PROJECT_OPEN,
+        Action::Hotkeys => KEYS,
+        Action::Shutdown => EXIT,
+        Action::Status => unreachable!(),
+    };
+    unsafe {
+        PostMessageW(window, COMMAND, command, 0);
+    }
+    bridge::READY
 }
 
 fn handle_command(window: HWND, id: usize) {
@@ -7107,6 +7262,9 @@ unsafe extern "system" fn procedure(
             return video_ui::procedure(window, message, wparam, lparam);
         }
         match message {
+            WM_COPYDATA if class_name(window) == MAIN => {
+                receive_desktop_command(window, wparam, lparam)
+            }
             WM_ACTIVATE if class_name(window) == workspace_ui::HOST => {
                 if wparam & 0xffff != WA_INACTIVE as usize {
                     workspace_ui::activate(window);
@@ -7654,10 +7812,11 @@ pub fn run(start_in_tray: bool) -> Result<(), String> {
         let mutex = CreateMutexW(
             null(),
             0,
-            wide(&settings::instance_mutex_name(
-                settings::is_test_run(),
-                std::process::id(),
-            ))
+            wide(&if crate::desktop_bridge::is_active() {
+                "Local\\SnapZyTauriPreview.Instance".into()
+            } else {
+                settings::instance_mutex_name(settings::is_test_run(), std::process::id())
+            })
             .as_ptr(),
         );
         if mutex.is_null() {
@@ -7703,6 +7862,7 @@ pub fn run(start_in_tray: bool) -> Result<(), String> {
                 combine_assets: vec![],
                 project_modal: false,
                 project_exit: None,
+                shutdown_committed: false,
                 next_detection_identity: 0,
                 next_video_session: 0,
                 exit_after_video: false,
@@ -7853,7 +8013,7 @@ pub fn run(start_in_tray: bool) -> Result<(), String> {
         STATE.with(|s| s.borrow_mut().as_mut().unwrap().launcher_tips = launcher_tips);
         layout(main);
         refresh_language();
-        let added = tray(true);
+        let added = !crate::desktop_bridge::is_active() && tray(true);
         STATE.with(|s| s.borrow_mut().as_mut().unwrap().tray_added = added);
         if !added {
             EnableWindow(GetDlgItem(main, HIDE as i32), 0);
@@ -7865,7 +8025,7 @@ pub fn run(start_in_tray: bool) -> Result<(), String> {
             }
             Err(error) => notify(main, &error, true),
         }
-        if !start_in_tray || !added {
+        if !crate::desktop_bridge::is_active() && (!start_in_tray || !added) {
             ShowWindow(main, SW_SHOW);
             UpdateWindow(main);
             trace::record("launcher.ready", started);

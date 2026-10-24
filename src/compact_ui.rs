@@ -207,7 +207,7 @@ pub fn editor_layout(width: i32, tabbed: bool) -> Result<EditorLayout, LayoutErr
 
     // Stable tool cells prevent selected and hover states from moving the toolbar.
     for index in 0..18 {
-        controls.push(editor_tool_rect(index, tools_y));
+        controls.push(editor_tool_rect(index, tools_y, width));
     }
     controls.extend([
         Rect::new(6, context_y + 3, 118, 26),
@@ -225,22 +225,28 @@ pub fn editor_layout(width: i32, tabbed: bool) -> Result<EditorLayout, LayoutErr
     })
 }
 
-pub fn editor_tool_rect(index: usize, tools_y: i32) -> Rect {
-    let mut x = 6;
-    for previous in 0..index {
-        x += if matches!(previous, 7 | 8) { 40 } else { 32 };
-        x += if matches!(previous, 2 | 4 | 8 | 12 | 14 | 15) {
-            7
-        } else {
-            3
-        };
+pub fn editor_tool_rect(index: usize, tools_y: i32, available_width: i32) -> Rect {
+    let group_width =
+        (0..18).map(tool_cell_width).sum::<i32>() + (0..17).map(tool_gap_after).sum::<i32>();
+    let mut x = (available_width - group_width).max(0) / 2;
+    for previous in 0..index.min(18) {
+        x += tool_cell_width(previous) + tool_gap_after(previous);
     }
-    Rect::new(
-        x,
-        tools_y + 3,
-        if matches!(index, 7 | 8) { 40 } else { 32 },
-        28,
-    )
+    Rect::new(x, tools_y + 2, tool_cell_width(index), 30)
+}
+
+fn tool_cell_width(index: usize) -> i32 {
+    if matches!(index, 7 | 8) { 42 } else { 34 }
+}
+
+fn tool_gap_after(index: usize) -> i32 {
+    if matches!(index, 2 | 4 | 8 | 12 | 14 | 15) {
+        8
+    } else if index < 17 {
+        4
+    } else {
+        0
+    }
 }
 
 pub fn has_overlaps(rects: impl Iterator<Item = Rect>) -> bool {
@@ -356,15 +362,28 @@ mod tests {
     fn tool_groups_leave_room_for_shape_arrows_at_every_supported_dpi() {
         for dpi in [96, 120, 144, 192] {
             let cells: Vec<_> = (0..18)
-                .map(|index| editor_tool_rect(index, 38).to_physical(dpi))
+                .map(|index| editor_tool_rect(index, 38, 780).to_physical(dpi))
                 .collect();
             assert!(!has_overlaps(cells.iter().copied()));
             for cell in &cells {
                 assert!(Size::new(780, 104).to_physical(dpi).contains(*cell));
             }
             for index in [7, 8] {
-                assert!(cells[index].width >= scale(24 + 12, dpi));
+                assert!(cells[index].width >= scale(24 + 16, dpi));
             }
         }
+    }
+
+    #[test]
+    fn editor_toolbar_uses_balanced_cells_and_centers_the_complete_tool_group() {
+        let cells: Vec<_> = (0..18)
+            .map(|index| editor_tool_rect(index, 38, 780))
+            .collect();
+        assert_eq!(cells[0].width, 34);
+        assert!(cells[0].x >= 20);
+        assert_eq!(cells[17].right(), 780 - cells[0].x);
+        assert_eq!(cells[7].width, 42);
+        assert_eq!(cells[8].width, 42);
+        assert!(!has_overlaps(cells.iter().copied()));
     }
 }

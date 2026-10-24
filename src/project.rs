@@ -1,6 +1,7 @@
 use crate::{
     editor::{
-        Annotation, Background, Content, Document, PathRendering, Pattern, Point, Style, Tool,
+        Annotation, Background, Content, Document, FontFamily, PathRendering, Pattern, Point,
+        Style, Tool,
     },
     effects::Effects,
     frame::{Frame, Rect},
@@ -98,6 +99,8 @@ enum Payload {
     Text {
         text: String,
         size: u32,
+        #[serde(default)]
+        font: FontFamily,
         wrap_width: Option<u32>,
         mask: u64,
         background: Background,
@@ -356,6 +359,7 @@ pub fn encode(frame: &Arc<Frame>, document: &Document) -> Result<Vec<u8>, String
                     Content::Text {
                         text,
                         size,
+                        font,
                         wrap_width,
                         background,
                         tail,
@@ -364,6 +368,7 @@ pub fn encode(frame: &Arc<Frame>, document: &Document) -> Result<Vec<u8>, String
                     } => Payload::Text {
                         text: text.to_string(),
                         size: *size,
+                        font: *font,
                         wrap_width: *wrap_width,
                         mask: id,
                         background: *background,
@@ -447,7 +452,7 @@ pub fn encode(frame: &Arc<Frame>, document: &Document) -> Result<Vec<u8>, String
     }
     let manifest = Manifest {
         format: "snapzy-rust-project".into(),
-        schema: 4,
+        schema: 5,
         writer: env!("CARGO_PKG_VERSION").into(),
         base: 0,
         crop: document.crop,
@@ -618,7 +623,7 @@ fn decode_budget(bytes: &[u8], budget: usize) -> Result<Project, String> {
     drop(f);
     let m: Manifest = serde_json::from_slice(&json).map_err(|e| e.to_string())?;
     if m.format != "snapzy-rust-project"
-        || !matches!(m.schema, 1..=4)
+        || !matches!(m.schema, 1..=5)
         || m.objects.len() > 2000
         || m.images.len() + m.masks.len() + 1 != count
     {
@@ -626,7 +631,7 @@ fn decode_budget(bytes: &[u8], budget: usize) -> Result<Project, String> {
     }
     if m.objects.iter().any(|o| {
         (m.schema == 1 && (o.parent.present || matches!(o.content, Payload::Group { .. })))
-            || (matches!(m.schema, 2..=4) && !o.parent.present)
+            || (matches!(m.schema, 2..=5) && !o.parent.present)
             || (m.schema < 3 && o.rendering != PathRendering::Native)
             || (m.schema < 4
                 && matches!(
@@ -712,6 +717,7 @@ fn decode_budget(bytes: &[u8], budget: usize) -> Result<Project, String> {
             Payload::Text {
                 text,
                 size,
+                font,
                 wrap_width,
                 mask,
                 background,
@@ -722,6 +728,7 @@ fn decode_budget(bytes: &[u8], budget: usize) -> Result<Project, String> {
                 Content::Text {
                     text: Arc::from(text),
                     size,
+                    font,
                     wrap_width,
                     mask: masks.get(&mask).ok_or("Missing glyph")?.clone(),
                     background,
@@ -965,6 +972,37 @@ mod tests {
         );
         assert!(loaded.document.is_project_saved());
     }
+    #[test]
+    fn project_round_trip_retains_text_font_and_older_schema_defaults_to_segoe_ui() {
+        let frame = Arc::new(Frame::new(120, 80, [255; 4].repeat(120 * 80)).unwrap());
+        let mut document = Document::new(120, 80);
+        document
+            .add_text(Point::new(8., 12.), "ภาษาไทย", 24, Style::default())
+            .unwrap();
+        document
+            .set_text_font(crate::editor::FontFamily::Sarabun)
+            .unwrap();
+
+        let encoded = encode(&frame, &document).unwrap();
+        let loaded = decode(&encoded).unwrap();
+        assert_eq!(
+            loaded.document.objects[0].text_font(),
+            Some(crate::editor::FontFamily::Sarabun)
+        );
+
+        let old = rewrite(&encoded, |manifest| {
+            manifest["schema"] = serde_json::json!(4);
+            manifest["objects"][0]["content"]
+                .as_object_mut()
+                .unwrap()
+                .remove("font");
+        });
+        let old_loaded = decode(&old).unwrap();
+        assert_eq!(
+            old_loaded.document.objects[0].text_font(),
+            Some(crate::editor::FontFamily::SegoeUi)
+        );
+    }
     fn fixture() -> (Arc<Frame>, Document) {
         let f = Arc::new(Frame::new(160, 120, [220, 230, 240, 255].repeat(160 * 120)).unwrap());
         let mut d = Document::new(160, 120);
@@ -1116,7 +1154,7 @@ mod tests {
         let (f, d) = fixture();
         let bytes = encode(&f, &d).unwrap();
         for mutation in [
-            ("schema", serde_json::json!(5)),
+            ("schema", serde_json::json!(6)),
             ("format", serde_json::json!("neo-snap")),
             ("surprise", serde_json::json!(true)),
         ] {

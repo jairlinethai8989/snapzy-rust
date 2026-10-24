@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>SnapZy 0.15.0-alpha.5</title>
+  </head>
+  <body>
+    <main class="launcher" aria-label="SnapZy">
+      <header class="app-header">
+        <div class="brand"><img id="logo" alt="" width="32" height="32" /><div><h1>SnapZy</h1><span data-text="trial" class="edition"></span></div></div>
+        <nav class="header-actions" aria-label="Application">
+          <button class="icon-button" data-action="open" data-tooltip="openTip"><i data-lucide="image-plus"></i></button>
+          <button id="language" class="icon-button language" data-tooltip="languageTip">EN</button>
+          <button id="more" class="icon-button" data-menu="more" data-tooltip="moreTip" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
+        </nav>
+      </header>
+
+      <section class="capture-actions" aria-label="Capture">
+        <button class="capture-button primary" data-action="area" data-tooltip="areaTip"><i data-lucide="scan"></i><span data-text="area"></span></button>
+        <div class="split-capture"><button class="capture-button" data-action="window" data-tooltip="windowTip"><i data-lucide="app-window"></i><span data-text="window"></span></button><button class="split-button" data-menu="window" data-tooltip="desktopTip" aria-haspopup="menu" aria-expanded="false"><i data-lucide="chevron-down"></i></button></div>
+        <button class="capture-button" data-action="scrolling" data-tooltip="scrollTip"><i data-lucide="scan-line"></i><span data-text="scrolling"></span></button>
+        <button class="capture-button video-button" id="video" data-tooltip="videoTip"><i data-lucide="video"></i><span data-text="video"></span></button>
+      </section>
+
+      <section class="capture-options" aria-label="Capture options">
+        <button class="option-button" data-menu="delay" data-tooltip="delayTip" aria-haspopup="menu" aria-expanded="false"><i data-lucide="timer"></i><span id="delay-value"></span><i data-lucide="chevron-down" class="chevron"></i></button>
+        <button class="option-button" data-menu="scroll" data-tooltip="scrollModeTip" aria-haspopup="menu" aria-expanded="false"><i data-lucide="list-filter"></i><span id="scroll-value"></span><i data-lucide="chevron-down" class="chevron"></i></button>
+        <button class="option-button" data-menu="destination" data-tooltip="destinationTip" aria-haspopup="menu" aria-expanded="false"><i data-lucide="panels-top-left"></i><span id="destination-value"></span><i data-lucide="chevron-down" class="chevron"></i></button>
+      </section>
+
+      <footer class="statusbar"><span class="status"><span class="status-dot"></span><span id="status" role="status" aria-live="polite"></span></span><span class="version">0.15.0-alpha.5</span></footer>
+    </main>
+    <div id="popup" class="popup" role="menu" hidden></div>
+    <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+    <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="dismiss" class="icon-button" data-tooltip="dismiss"><i data-lucide="x"></i></button></div>
+
+    <dialog id="video-dialog">
+      <form id="video-form">
+        <div class="dialog-heading"><h2 data-text="videoTitle"></h2><button type="button" class="icon-button" data-close="video-dialog" data-tooltip="close"><i data-lucide="x"></i></button></div>
+        <div class="form-row"><label data-text="source"></label><div class="segments" role="group" aria-label="Recording source"><button type="button" class="selected" data-source="video_monitor" aria-pressed="true"><i data-lucide="monitor"></i><span data-text="screen"></span></button><button type="button" data-source="video_window" aria-pressed="false"><i data-lucide="app-window"></i><span data-text="window"></span></button></div></div>
+        <div class="form-row"><label for="audio" data-text="audio"></label><select id="audio"><option value="none" data-text="silent"></option><option value="system" data-text="system"></option><option value="microphone" data-text="microphone"></option><option value="both" data-text="both"></option></select></div>
+        <button class="record-button" type="submit"><i data-lucide="circle"></i><span data-text="record"></span></button>
+      </form>
+    </dialog>
+    <dialog id="about-dialog"><div class="dialog-heading"><h2 data-text="about"></h2><button class="icon-button" data-close="about-dialog" data-tooltip="close"><i data-lucide="x"></i></button></div><div class="about-brand"><img id="about-logo" alt="" width="40" height="40"/><div><strong>SnapZy</strong><p data-text="aboutText"></p></div></div><p class="about-detail" data-text="engineVersion"></p><p class="about-detail" data-text="license"></p></dialog>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

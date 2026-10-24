@@ -228,7 +228,11 @@ pub fn data_dir() -> PathBuf {
     PathBuf::from(
         std::env::var_os("LOCALAPPDATA").unwrap_or_else(|| std::env::temp_dir().into_os_string()),
     )
-    .join("SnapZyRustPreview")
+    .join(if crate::desktop_bridge::is_active() {
+        "SnapZyTauriPreview"
+    } else {
+        "SnapZyRustPreview"
+    })
 }
 
 #[cfg(test)]

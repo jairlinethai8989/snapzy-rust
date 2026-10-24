@@ -1,11 +1,32 @@
 # SnapZy Rust Preview
 
-**Version:** 0.14.0-alpha.1 | **Platform:** Windows 10/11, x64 | **License:** MIT
+**Version:** 0.15.0-alpha.5 | **Platform:** Windows 10/11, x64 | **License:** MIT
 
 SnapZy Rust Preview is an early, standalone Rust implementation for measuring
 startup and capture responsiveness against the existing SnapZy Windows app.
 It is an experiment, not a claim that Rust is faster. The two applications use
 separate settings, process identity, hotkeys and installation locations.
+
+## Tauri Interface
+
+The current [Tauri 2 interface](experiments/tauri/README.md) uses HTML,
+CSS and vanilla JavaScript, with no JavaScript UI framework. It connects to the
+existing native Rust capture engine. It covers the launcher and image editor,
+EN/TH, capture options and command handoff.
+
+หน้าหลักและหน้าแก้ไข Tauri ใช้ HTML/CSS/JavaScript ล้วนใน `experiments/tauri`
+รองรับ EN/TH และส่งคำสั่งไปยังระบบจับภาพ Rust เดิม
+
+## User guides / คู่มือผู้ใช้
+
+- [คู่มือภาษาไทย](docs/user-guide-th.md) · [English user guide](docs/user-guide-en.md)
+- [หน้าจับภาพ](docs/images/snapzy-launcher-overview.png) · [หน้าแก้ไขภาพ](docs/images/snapzy-editor-overview.png)
+
+| หน้าจับภาพ / Capture launcher | หน้าแก้ไขภาพ / Image editor |
+| --- | --- |
+| <a href="docs/images/snapzy-launcher-overview.png"><img src="docs/images/snapzy-launcher-overview.png" width="420" alt="SnapZy capture launcher"></a> | <a href="docs/images/snapzy-editor-overview.png"><img src="docs/images/snapzy-editor-overview.png" width="420" alt="SnapZy image editor"></a> |
+
+คู่มืออ้างอิง Tauri Editor `0.15.0-alpha.5` และระบุคำสั่งที่ยังไม่เชื่อมต่อในรุ่นนี้ไว้แล้ว
 
 ## Features in this preview
 

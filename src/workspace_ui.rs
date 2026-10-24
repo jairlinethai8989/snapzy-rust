@@ -140,7 +140,14 @@ pub(super) fn route(owner: HWND) -> Route {
     })
 }
 pub(super) fn native_owner(window: HWND) -> HWND {
-    unsafe { GetAncestor(window, GA_ROOT) }
+    let root = unsafe { GetAncestor(window, GA_ROOT) };
+    if crate::desktop_bridge::is_active() && class_name(root) == MAIN {
+        let external = crate::desktop_bridge::owner() as HWND;
+        if !external.is_null() && unsafe { IsWindow(external) } != 0 {
+            return external;
+        }
+    }
+    root
 }
 pub(super) fn commit_numeric() {
     unsafe {
