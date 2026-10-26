@@ -108,6 +108,18 @@ const HOTKEY_ROWS: [(HotkeyAction, i32, i32, i32); 6] = [
     (HotkeyAction::Video, 314, 315, 316),
     (HotkeyAction::Delay, 317, 318, 319),
 ];
+const HOTKEY_KEY_OPTIONS: [(u32, &str); 31] = [
+    (119, "F8"), (120, "F9"), (121, "F10"), (122, "F11"), (44, "Print Screen"),
+    (65, "A"), (66, "B"), (67, "C"), (68, "D"), (69, "E"), (70, "F"),
+    (71, "G"), (72, "H"), (73, "I"), (74, "J"), (75, "K"), (76, "L"),
+    (77, "M"), (78, "N"), (79, "O"), (80, "P"), (81, "Q"), (82, "R"),
+    (83, "S"), (84, "T"), (85, "U"), (86, "V"), (87, "W"), (88, "X"),
+    (89, "Y"), (90, "Z"),
+];
+
+fn hotkey_key_options() -> &'static [(u32, &'static str)] {
+    &HOTKEY_KEY_OPTIONS
+}
 const STATUS: i32 = 401;
 const CAPTURE_TIMER: usize = 501;
 const OCR_LANGUAGE: i32 = 901;
@@ -5919,7 +5931,7 @@ fn show_hotkeys() {
                 SendMessageW(modifier, CB_ADDSTRING, 0, wide(value).as_ptr() as LPARAM);
             }
         }
-        for value in ["F8", "F9", "F10", "F11", "Print Screen"] {
+        for (_, value) in hotkey_key_options() {
             unsafe {
                 SendMessageW(key, CB_ADDSTRING, 0, wide(value).as_ptr() as LPARAM);
             }
@@ -5947,9 +5959,9 @@ fn show_hotkeys() {
             SendMessageW(
                 key,
                 CB_SETCURSEL,
-                settings::HOTKEY_KEYS
+                hotkey_key_options()
                     .iter()
-                    .position(|value| *value == binding.key)
+                    .position(|(value, _)| *value == binding.key)
                     .unwrap_or(0),
                 0,
             );
@@ -5987,7 +5999,7 @@ fn hotkey_form_binding(window: HWND, row: (HotkeyAction, i32, i32, i32)) -> Opti
     Some(HotkeyBinding::new(
         enabled,
         settings::HOTKEY_MODIFIERS[modifier as usize],
-        settings::HOTKEY_KEYS[key as usize],
+        hotkey_key_options()[key as usize].0,
     ))
 }
 
@@ -8227,6 +8239,14 @@ mod text_error_tests {
             assert!(ids.insert(modifier));
             assert!(ids.insert(key));
         }
+    }
+
+    #[test]
+    fn hotkey_key_options_include_letters_and_legacy_capture_keys() {
+        let values = super::hotkey_key_options();
+        assert!(values.iter().any(|(key, label)| *key == u32::from(b'A') && *label == "A"));
+        assert!(values.iter().any(|(key, label)| *key == 119 && *label == "F8"));
+        assert!(values.iter().any(|(key, label)| *key == 44 && *label == "Print Screen"));
     }
     #[test]
     fn delay_choices_are_visible_and_keep_the_supported_order() {

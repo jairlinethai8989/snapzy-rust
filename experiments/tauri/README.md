@@ -1,14 +1,14 @@
-# SnapZy 0.15.0-alpha.5
+# SnapZy 0.15.0-alpha.6
 
 The SnapZy Windows launcher and editor use Tauri 2, HTML, CSS and vanilla JavaScript.
 There is no React, Vue, Svelte or other JavaScript UI framework. Vite builds
 the static frontend; Lucide supplies icons.
 
 The Tauri launcher and editor are a user interface for the existing Rust
-capture and image-editing engine. Alpha 5 supports capture, scrolling, video,
-hotkeys and the editor tools described in the bilingual user guides. OCR and
-the editor's add/combine image and editable-project commands are visible but
-not connected in this version.
+capture and image-editing engine. Alpha 6 supports capture, scrolling, video,
+hotkeys, editable `.snapzy` projects and the editor tools described in the
+bilingual user guides. OCR and the editor's add/combine image commands remain
+visible but are not connected in this version.
 
 ## Run The Portable Build
 
@@ -38,7 +38,7 @@ npm run desktop:build
 ```
 
 `desktop:build` builds the native engine, the frontend and the Tauri shell, then
-assembles `dist/SnapZy-0.15.0-alpha.5-win-x64` and an NSIS installer in the repository root.
+assembles `dist/SnapZy-0.15.0-alpha.6-win-x64` and an NSIS installer in the repository root.
 The browser preview is `http://127.0.0.1:51819`. Browser-only capture commands
 show a desktop-app notice; they do not simulate successful captures.
 

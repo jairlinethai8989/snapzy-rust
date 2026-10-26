@@ -1,20 +1,20 @@
 # SnapZy Rust Preview
 
-**Version:** 0.15.0-alpha.5 | **Platform:** Windows 10/11, x64 | **License:** MIT
+**Version:** 0.15.0-alpha.6 | **Platform:** Windows 10/11, x64 | **License:** MIT
 
 ## Download / ดาวน์โหลด
 
 **Windows 10/11 · 64-bit · Pre-release**
 
-[⬇ Download SnapZy 0.15.0-alpha.5 for Windows](https://github.com/jairlinethai8989/snapzy-rust/releases/download/v0.15.0-alpha.5/SnapZy-Setup-0.15.0-alpha.5-win-x64.exe)
+[⬇ Download SnapZy 0.15.0-alpha.6 for Windows](https://github.com/jairlinethai8989/snapzy-rust/releases/download/v0.15.0-alpha.6/SnapZy-Setup-0.15.0-alpha.6-win-x64.exe)
 
 New to GitHub? On the release page, expand **Assets** and choose
-`SnapZy-Setup-0.15.0-alpha.5-win-x64.exe`. Open the downloaded file and follow
+`SnapZy-Setup-0.15.0-alpha.6-win-x64.exe`. Open the downloaded file and follow
 the setup steps. This pre-release installer is unsigned, so Windows may show a
 SmartScreen warning.
 
 สำหรับมือใหม่: กดลิงก์ดาวน์โหลดด้านบน หรือเปิดหน้า Release แล้วกด **Assets**
-จากนั้นเลือก `SnapZy-Setup-0.15.0-alpha.5-win-x64.exe` เปิดไฟล์ที่ดาวน์โหลด
+จากนั้นเลือก `SnapZy-Setup-0.15.0-alpha.6-win-x64.exe` เปิดไฟล์ที่ดาวน์โหลด
 แล้วทำตามขั้นตอนติดตั้ง รุ่นนี้เป็นรุ่นทดสอบและไฟล์ติดตั้งยังไม่ได้ลงลายเซ็น
 Windows จึงอาจแสดงคำเตือน SmartScreen
 
@@ -42,7 +42,7 @@ EN/TH, capture options and command handoff.
 | --- | --- |
 | <a href="docs/images/snapzy-launcher-overview.png"><img src="docs/images/snapzy-launcher-overview.png" width="420" alt="SnapZy capture launcher"></a> | <a href="docs/images/snapzy-editor-overview.png"><img src="docs/images/snapzy-editor-overview.png" width="420" alt="SnapZy image editor"></a> |
 
-คู่มืออ้างอิง Tauri Editor `0.15.0-alpha.5` และระบุคำสั่งที่ยังไม่เชื่อมต่อในรุ่นนี้ไว้แล้ว
+คู่มืออ้างอิง Tauri Editor `0.15.0-alpha.6` และระบุคำสั่งที่ยังไม่เชื่อมต่อในรุ่นนี้ไว้แล้ว โดยไฟล์งาน `.snapzy` รองรับเปิด บันทึก และบันทึกเป็นแล้ว
 
 ## Features in this preview
 

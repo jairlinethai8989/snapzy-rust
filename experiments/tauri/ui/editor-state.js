@@ -162,7 +162,7 @@ export function normalizeEditor(input) {
     parameter: Number.isInteger(value.parameter) && value.parameter >= 1 && value.parameter <= 256 ? value.parameter : 5,
     opacity: Number.isInteger(value.opacity) && value.opacity >= 0 && value.opacity <= 100 ? value.opacity : 100,
     pattern: patterns.has(value.pattern) ? value.pattern : "Solid",
-    font: fonts.has(value.font) ? value.font : "segoe_ui",
+    font: fonts.has(value.font) ? value.font : "noto_sans_thai",
     textBackground: {
       enabled: value.textBackground?.enabled === true,
       color: /^#[0-9a-f]{6}$/i.test(value.textBackground?.color)
@@ -180,6 +180,14 @@ export function screenToDocument(point, bounds, viewport) {
     x: (point.x - bounds.left - viewport.pan.x) / viewport.zoom,
     y: (point.y - bounds.top - viewport.pan.y) / viewport.zoom,
   };
+}
+
+export function translateVisiblePoint(point, origin) {
+  return { x: point.x + origin.x, y: point.y + origin.y };
+}
+
+export function shouldHandleCanvasShortcuts({ editing = false, composing = false } = {}) {
+  return editing !== true && composing !== true;
 }
 
 export function zoomAround(viewport, pointer, requestedZoom) {

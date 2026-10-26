@@ -57,6 +57,11 @@ mod font_family_tests {
     use super::*;
 
     #[test]
+    fn new_text_uses_noto_sans_thai_by_default() {
+        assert_eq!(FontFamily::default(), FontFamily::NotoSansThai);
+    }
+
+    #[test]
     fn changing_selected_text_font_is_one_reversible_edit() {
         let mut document = Document::new(640, 480);
         document
@@ -179,13 +184,13 @@ pub enum Pattern {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FontFamily {
-    #[default]
     SegoeUi,
     Arial,
     Calibri,
     Tahoma,
     Kanit,
     Prompt,
+    #[default]
     NotoSansThai,
     Sarabun,
 }

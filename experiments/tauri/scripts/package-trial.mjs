@@ -5,7 +5,7 @@ import path from "node:path";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const trial = fileURLToPath(new URL("../", import.meta.url));
-const version = "0.15.0-alpha.5";
+const version = "0.15.0-alpha.6";
 const destination = path.join(root, `dist/SnapZy-${version}-win-x64`);
 await mkdir(destination, { recursive: true });
 await copyFile(path.join(trial, "src-tauri/target/x86_64-pc-windows-msvc/release/snapzy-tauri.exe"), path.join(destination, "SnapZy.exe"));

@@ -110,6 +110,7 @@ pub struct EditorView {
     pub crop_ready: bool,
     pub effects: Effects,
     pub outline_supported: bool,
+    pub dirty: bool,
     pub selection_overlay: Option<SelectionOverlay>,
 }
 
@@ -165,6 +166,7 @@ pub struct SelectionOverlay {
 pub struct EditorService {
     source: Arc<Frame>,
     session: Session,
+    project_path: Option<PathBuf>,
 }
 
 impl EditorService {
@@ -192,7 +194,7 @@ impl EditorService {
             crate::image_limits::IMAGE_LIMIT,
         )?);
         let session = Session::new(source.width, source.height);
-        Ok(Self { source, session })
+        Ok(Self { source, session, project_path: None })
     }
 
     pub fn open_path(path: &Path) -> Result<Self, String> {
@@ -202,6 +204,26 @@ impl EditorService {
         }
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         Self::open_bytes(&bytes)
+    }
+
+    pub fn open_project(path: &Path) -> Result<Self, String> {
+        let project = crate::project::load(path, crate::image_limits::SOURCE_LIMIT)?;
+        let mut session = Session::new(project.frame.width, project.frame.height);
+        session.document = project.document;
+        Ok(Self {
+            source: project.frame,
+            session,
+            project_path: Some(path.to_path_buf()),
+        })
+    }
+
+    pub fn save_project(&mut self, path: &Path) -> Result<(), String> {
+        crate::project::save(path, &self.source, &self.session.document)?;
+        self.session
+            .document
+            .mark_project_saved(self.session.document.revision);
+        self.project_path = Some(path.to_path_buf());
+        Ok(())
     }
 
     pub fn view(&self) -> EditorView {
@@ -224,7 +246,10 @@ impl EditorService {
             crop_ready: self.session.crop_draft().is_some(),
             effects: self.session.effects(),
             outline_supported: matches!(self.session.effective_tool(), Tool::Text | Tool::Callout),
-            selection_overlay: self.selection_overlay(),
+            dirty: !self.session.document.is_project_saved(),
+            selection_overlay: self
+                .selection_overlay()
+                .map(|overlay| visible_overlay(overlay, document.crop)),
         }
     }
 
@@ -433,6 +458,7 @@ impl EditorService {
                 text,
                 callout,
             } => {
+                let point = self.to_document_point(point);
                 if !valid_point(point) {
                     return Err("Invalid text position.".into());
                 }
@@ -506,6 +532,7 @@ impl EditorService {
                 }
             }
             EditorCommand::Press { point, tolerance } => {
+                let point = self.to_document_point(point);
                 if !valid_point(point)
                     || !tolerance.is_finite()
                     || !(0.5..=100.).contains(&tolerance)
@@ -515,12 +542,14 @@ impl EditorService {
                 self.session.press(point, tolerance);
             }
             EditorCommand::Move { point } => {
+                let point = self.to_document_point(point);
                 if !valid_point(point) {
                     return Err("Invalid pointer input.".into());
                 }
                 self.session.update(point);
             }
             EditorCommand::Release { point } => {
+                let point = self.to_document_point(point);
                 if !valid_point(point) {
                     return Err("Invalid pointer input.".into());
                 }
@@ -555,6 +584,13 @@ impl EditorService {
             return Err(error);
         }
         Ok(self.view())
+    }
+
+    fn to_document_point(&self, point: Point) -> Point {
+        Point::new(
+            point.x + self.session.document.crop.x as f64,
+            point.y + self.session.document.crop.y as f64,
+        )
     }
 
     pub fn preview_png(&self) -> Result<Vec<u8>, String> {
@@ -615,6 +651,19 @@ fn valid_point(point: Point) -> bool {
         && (-32768.0..=32768.0).contains(&point.y)
 }
 
+fn visible_overlay(mut overlay: SelectionOverlay, crop: Rect) -> SelectionOverlay {
+    let origin = Point::new(crop.x as f64, crop.y as f64);
+    let visible = |point: Point| Point::new(point.x - origin.x, point.y - origin.y);
+    if let Some(bounds) = &mut overlay.bounds {
+        bounds.start = visible(bounds.start);
+        bounds.end = visible(bounds.end);
+    }
+    for handle in &mut overlay.handles {
+        handle.point = visible(handle.point);
+    }
+    overlay
+}
+
 fn duplicate_area_axis(min: f64, max: f64, canvas_max: f64) -> f64 {
     if min + 16. < canvas_max {
         min + 16.
@@ -638,6 +687,8 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum ServiceRequest {
     Open { path: PathBuf },
+    OpenProject { path: PathBuf },
+    SaveProject { path: PathBuf },
     Apply { command: EditorCommand },
     Preview { path: PathBuf },
     View,
@@ -696,6 +747,15 @@ pub fn run_stdio() -> Result<(), String> {
                 service = Some(opened);
                 Some(view)
             }),
+            ServiceRequest::OpenProject { path } => EditorService::open_project(&path).map(|opened| {
+                let view = opened.view();
+                service = Some(opened);
+                Some(view)
+            }),
+            ServiceRequest::SaveProject { path } => service
+                .as_mut()
+                .ok_or_else(|| "Open an image before saving a project.".into())
+                .and_then(|editor| editor.save_project(&path).map(|_| Some(editor.view()))),
             ServiceRequest::Apply { command } => service
                 .as_mut()
                 .ok_or_else(|| "Open an image before editing.".into())

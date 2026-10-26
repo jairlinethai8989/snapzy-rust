@@ -23,7 +23,10 @@ pub fn instance_mutex_name(test_run: bool, process_id: u32) -> String {
 }
 
 pub const HOTKEY_MODIFIERS: [u32; 4] = [3, 6, 5, 7];
-pub const HOTKEY_KEYS: [u32; 5] = [119, 120, 121, 122, 44];
+pub const HOTKEY_KEYS: [u32; 31] = [
+    119, 120, 121, 122, 44,
+    65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90,
+];
 pub const CAPTURE_DELAY_PRESETS: [u32; 4] = [0, 3, 5, 10];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -346,6 +349,13 @@ mod tests {
         assert_eq!(loaded.desktop_hotkey, value.desktop_hotkey);
         assert_eq!(loaded.capture_delay_seconds, 5);
         assert!(loaded.validate().is_ok());
+    }
+
+    #[test]
+    fn letter_hotkeys_are_valid_with_supported_modifiers() {
+        assert!(HotkeyBinding::new(true, HOTKEY_MODIFIERS[1], u32::from(b'A')).is_valid());
+        assert!(HotkeyBinding::new(true, HOTKEY_MODIFIERS[2], u32::from(b'Z')).is_valid());
+        assert!(!HotkeyBinding::new(true, HOTKEY_MODIFIERS[1], u32::from(b'1')).is_valid());
     }
 
     #[test]

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const expectedVersion = "0.15.0-alpha.5";
+const expectedVersion = "0.15.0-alpha.6";
 const versionPattern = new RegExp(expectedVersion.replaceAll(".", "\\."));
 const root = new URL("..", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -23,6 +23,8 @@ test("SnapZy manifests, engine and visible UI report one product version", async
   assert.equal(packageLock.version, expectedVersion);
   assert.equal(packageLock.packages[""].version, expectedVersion);
   assert.equal(tauriConfig.version, expectedVersion);
+  assert.equal(tauriConfig.app.windows[0].visible, true);
+  assert.equal(tauriConfig.app.windows[0].skipTaskbar, false);
   assert.equal(tauriConfig.productName, "SnapZy Rust");
   assert.equal(tauriConfig.identifier, "com.jairlinethai.snapzy.rust");
   assert.doesNotMatch(JSON.stringify(tauriConfig), /trial/i);
@@ -35,7 +37,7 @@ test("SnapZy manifests, engine and visible UI report one product version", async
   assert.match(launcherText, versionPattern);
   assert.doesNotMatch(launcherText, /UI trial|รุ่นทดลอง UI/i);
   assert.match(packaging, /SnapZy-\$\{version\}-win-x64/);
-  assert.match(packaging, /SnapZy-Rust-Setup-\$\{version\}-auto-fit-20261024\.exe/);
+  assert.match(packaging, /SnapZy-Setup-\$\{version\}-win-x64\.exe/);
   assert.match(packaging, /startsWith\("SnapZy Rust_"\)/);
 });
 

@@ -17,7 +17,9 @@ import {
   selectionGuide,
   selectionOverlayToScreen,
   screenToDocument,
+  shouldHandleCanvasShortcuts,
   shouldDuplicateShortcut,
+  translateVisiblePoint,
   steppedZoom,
   zoomAround,
 } from "../ui/editor-state.js";
@@ -138,7 +140,7 @@ test("pointer commands stay ordered while the editor service is busy", async () 
   assert.deepEqual(calls, ["start:press", "end:press", "start:release", "end:release"]);
 });
 
-test("editor defaults keep the established red 5 px drawing style", () => {
+test("editor defaults keep the established red 5 px drawing style and Noto Sans Thai", () => {
   assert.deepEqual(normalizeEditor({}), {
     language: "en",
     activeTool: "Select",
@@ -146,7 +148,7 @@ test("editor defaults keep the established red 5 px drawing style", () => {
     parameter: 5,
     opacity: 100,
     pattern: "Solid",
-    font: "segoe_ui",
+    font: "noto_sans_thai",
     textBackground: { enabled: false, color: "#ffffff" },
     zoom: 1,
     pan: { x: 0, y: 0 },
@@ -193,6 +195,23 @@ test("canvas coordinates account for canvas bounds zoom and pan", () => {
     screenToDocument({ x: 350, y: 260 }, { left: 100, top: 60 }, { zoom: 2, pan: { x: 50, y: 20 } }),
     { x: 100, y: 90 },
   );
+});
+
+test("visible editor coordinates translate through a cropped document origin exactly once", () => {
+  assert.deepEqual(
+    translateVisiblePoint({ x: 10, y: 12 }, { x: 360, y: 54 }),
+    { x: 370, y: 66 },
+  );
+  assert.deepEqual(
+    translateVisiblePoint({ x: 370, y: 66 }, { x: -360, y: -54 }),
+    { x: 10, y: 12 },
+  );
+});
+
+test("canvas shortcuts are disabled while text controls own the keyboard", () => {
+  assert.equal(shouldHandleCanvasShortcuts({ editing: true, composing: false }), false);
+  assert.equal(shouldHandleCanvasShortcuts({ editing: false, composing: true }), false);
+  assert.equal(shouldHandleCanvasShortcuts({ editing: false, composing: false }), true);
 });
 
 test("zooming around the pointer keeps the same document point under it", () => {

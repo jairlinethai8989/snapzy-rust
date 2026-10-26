@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
-    <title>SnapZy 0.15.0-alpha.5 | Image editor</title>
+    <title>SnapZy 0.15.0-alpha.6 | Image editor</title>
   </head>
   <body class="editor-page">
     <main class="editor-app" aria-label="SnapZy image editor">
@@ -128,6 +128,15 @@
     <dialog id="help-dialog">
       <header><div><span class="dialog-kicker">SnapZy</span><h2 data-i18n="helpTitle">Editor tools</h2></div><button class="dialog-close" type="button" data-close-dialog="help-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>
       <div id="help-grid" class="help-grid"></div>
+    </dialog>
+    <dialog id="close-dialog" class="close-dialog">
+      <header><div><span class="dialog-kicker">SnapZy</span><h2 data-i18n="closeProjectTitle">Unsaved changes</h2></div><button class="dialog-close" type="button" data-close-dialog="close-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>
+      <p data-i18n="saveBeforeClose">This project has unsaved changes. Save before closing?</p>
+      <footer class="dialog-actions">
+        <button id="close-cancel" type="button" class="dialog-button" data-i18n="cancel">Cancel</button>
+        <button id="close-discard" type="button" class="dialog-button" data-i18n="discard">Discard</button>
+        <button id="close-save" type="button" class="dialog-button primary" data-i18n="save">Save</button>
+      </footer>
     </dialog>
     <dialog id="text-dialog" data-kind="Text">
       <header><div><span class="dialog-kicker">SnapZy</span><h2 id="text-dialog-title">Add text</h2></div><button class="dialog-close" type="button" data-close-dialog="text-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>

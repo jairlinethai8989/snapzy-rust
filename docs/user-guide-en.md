@@ -1,6 +1,6 @@
-# SnapZy 0.15.0-alpha.5 User Guide
+# SnapZy 0.15.0-alpha.6 User Guide
 
-This guide describes the capture launcher and image editor in SnapZy Rust `0.15.0-alpha.5`. The screenshots use synthetic sample data created for this guide.
+This guide describes the capture launcher and image editor in SnapZy Rust `0.15.0-alpha.6`. The screenshots use synthetic sample data created for this guide.
 
 ## Screen overview
 
@@ -55,6 +55,6 @@ The More menu contains commands for the entire desktop, keyboard shortcuts, and 
 - `Ctrl` + `D`: duplicate the selected object; `Delete`: remove it
 - `Enter`: apply a crop; `Esc`: dismiss a menu or cancel the current operation
 
-## Alpha 5 limitations
+## Alpha 6 limitations
 
-The **OCR**, **Add Image**, **Combine Images**, **Open Project**, and **Save Project** commands are visible in this version but are not connected in the Tauri Editor Alpha 5. Selecting them displays a not-yet-available message. Copy image and Save PNG export a flattened image; they do not save an editable project file.
+The **OCR**, **Add Image**, and **Combine Images** commands remain visible but are not connected in the Tauri Editor Alpha 6. **Open Project**, **Save**, and **Save As** now use editable `.snapzy` project files. Copy image and Save PNG still export a flattened image and do not mark the editable project as saved.

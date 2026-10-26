@@ -7,10 +7,12 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-const engine = path.join(root, "dist/SnapZy-0.15.0-alpha.5-win-x64/engine/snapzy-engine.exe");
+const engine = path.join(root, "dist/SnapZy-0.15.0-alpha.6-win-x64/engine/snapzy-engine.exe");
 const input = path.join(root, "tests/fixtures/ocr/english.png");
 const output = path.join(tmpdir(), "snapzy-tauri-editor-smoke.png");
+const project = path.join(tmpdir(), "snapzy-tauri-editor-smoke.snapzy");
 await rm(output, { force: true });
+await rm(project, { force: true });
 
 const child = spawn(engine, ["--editor-service"], {
   cwd: path.dirname(engine),
@@ -70,6 +72,16 @@ try {
   assert.deepEqual([...bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   assert.ok((await stat(output)).size > 100);
 
+  const saved = await send({ type: "save_project", path: project });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.view.dirty, false);
+  assert.ok((await stat(project)).size > 100);
+  const reopened = await send({ type: "open_project", path: project });
+  assert.equal(reopened.ok, true);
+  assert.equal(reopened.view.dirty, false);
+  assert.equal(reopened.view.width, duplicatedArea.view.width);
+  assert.equal(reopened.view.height, duplicatedArea.view.height);
+
   const shutdown = await send({ type: "shutdown" });
   assert.equal(shutdown.ok, true);
   child.stdin.end();
@@ -79,4 +91,5 @@ try {
 } finally {
   if (!child.killed) child.kill();
   await rm(output, { force: true });
+  await rm(project, { force: true });
 }

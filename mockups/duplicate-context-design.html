@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SnapZy Duplicate UI concepts</title>
+  <style>
+    :root { color-scheme: light; font-family: "Segoe UI", Tahoma, sans-serif; color: #172033; background: #edf3fb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; padding: 30px; }
+    main { width: 1220px; margin: 0 auto; }
+    .title-row { display: flex; align-items: end; justify-content: space-between; margin-bottom: 18px; }
+    h1 { margin: 0; font-size: 30px; letter-spacing: 0; }
+    .subtitle { margin-top: 6px; color: #657189; font-size: 15px; }
+    .version { padding: 7px 12px; border: 1px solid #c9d8ed; background: #fff; border-radius: 6px; color: #315c91; font-weight: 600; }
+    .options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+    .option { position: relative; min-height: 154px; padding: 18px; background: #fff; border: 1px solid #cdd9ea; border-radius: 8px; }
+    .option.recommended { border: 2px solid #1670df; box-shadow: 0 8px 22px rgba(41, 84, 138, .14); }
+    .badge { position: absolute; top: -11px; right: 14px; padding: 4px 9px; border-radius: 999px; background: #1670df; color: white; font-size: 12px; font-weight: 700; }
+    .option h2 { margin: 0 0 12px; font-size: 17px; }
+    .icon-pair { display: flex; gap: 10px; margin-bottom: 12px; }
+    .icon-button { display: flex; width: 135px; height: 48px; padding: 0 12px; align-items: center; gap: 9px; border: 1px solid #bfd0e7; border-radius: 6px; background: #f8fbff; color: #16375f; }
+    .icon-button i { width: 23px; height: 23px; stroke-width: 1.7; }
+    .icon-button span { font-size: 13px; font-weight: 650; }
+    .reason { margin: 0; color: #647086; line-height: 1.45; font-size: 13px; }
+    .preview { background: #fff; border: 1px solid #cdd9ea; border-radius: 8px; overflow: hidden; box-shadow: 0 12px 30px rgba(40, 69, 110, .12); }
+    .window-title { display: flex; height: 42px; align-items: center; justify-content: space-between; padding: 0 14px; background: #f7f9fc; border-bottom: 1px solid #d7e0ec; font-size: 14px; }
+    .app { display: flex; align-items: center; gap: 9px; font-weight: 650; }
+    .logo { display: grid; place-items: center; width: 23px; height: 23px; color: white; background: #1268d7; border-radius: 5px; }
+    .logo i { width: 15px; }
+    .toolbar { display: flex; align-items: center; height: 58px; padding: 8px 14px; gap: 8px; border-bottom: 1px solid #d7e0ec; }
+    .tool { display: grid; place-items: center; width: 39px; height: 39px; border: 1px solid #c6d4e6; border-radius: 5px; background: white; color: #1c344f; }
+    .tool i { width: 21px; height: 21px; stroke-width: 1.65; }
+    .tool.active { background: #e7f2ff; border-color: #4994ea; color: #075fc5; }
+    .tool.area { margin-left: 6px; border-color: #69a7e9; color: #075fc5; }
+    .toolbar-sep { width: 1px; height: 29px; background: #d6dfeb; margin: 0 2px; }
+    .toolbar-label { margin-left: auto; padding-right: 4px; color: #66748a; font-size: 12px; }
+    .workspace { position: relative; height: 338px; overflow: hidden; background: #e8eef6; }
+    .canvas { position: absolute; left: 160px; top: 28px; width: 680px; height: 280px; background: #fff; border: 1px solid #c9d5e4; box-shadow: 0 8px 18px rgba(52, 77, 110, .1); }
+    .canvas-head { height: 48px; background: #0b8d58; color: white; display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 700; }
+    .rows { padding: 10px 16px; }
+    .row { display: grid; grid-template-columns: 70px 1fr 120px; height: 31px; border-bottom: 1px solid #d7dee7; }
+    .row span { border-right: 1px solid #d7dee7; }
+    .selected-object { position: absolute; left: 267px; top: 123px; width: 180px; height: 66px; border: 2px solid #1670df; background: rgba(22,112,223,.07); }
+    .selected-object::before, .selected-object::after { content: ""; position: absolute; width: 7px; height: 7px; background: #fff; border: 1px solid #1670df; }
+    .selected-object::before { left: -5px; top: -5px; }
+    .selected-object::after { right: -5px; bottom: -5px; }
+    .menu { position: absolute; width: 206px; padding: 6px; border: 1px solid #c4d0df; border-radius: 7px; background: #fff; box-shadow: 0 12px 28px rgba(25, 44, 72, .2); }
+    .menu.object { left: 457px; top: 120px; }
+    .menu.blank { right: 62px; bottom: 35px; }
+    .menu-title { padding: 6px 9px 5px; color: #7a8799; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .menu-item { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 9px; border-radius: 5px; color: #25364e; font-size: 13px; }
+    .menu-item.primary { background: #edf5ff; color: #075fc5; }
+    .menu-item.danger { color: #c0363e; }
+    .menu-item i { width: 18px; height: 18px; stroke-width: 1.7; }
+    .shortcut { margin-left: auto; color: #8290a4; font-size: 11px; }
+    .cursor { position: absolute; right: 249px; bottom: 56px; color: #172033; }
+    .cursor i { width: 24px; height: 24px; fill: white; }
+    .legend { display: flex; gap: 26px; padding: 13px 16px; background: #f8fafc; border-top: 1px solid #d7e0ec; color: #647086; font-size: 12px; }
+    .legend strong { color: #21334b; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="title-row">
+      <div><h1>แนวทางไอคอน Duplicate และเมนูคลิกขวา</h1><div class="subtitle">เปรียบเทียบสัญลักษณ์ที่อ่านง่ายในพื้นที่แถบเครื่องมือขนาดเล็ก</div></div>
+      <div class="version">เสนออัปเดตเป็น v0.1.1</div>
+    </div>
+    <section class="options">
+      <article class="option recommended">
+        <div class="badge">แนะนำ</div>
+        <h2>A — เรียบง่ายและสื่อการลากชัด</h2>
+        <div class="icon-pair">
+          <div class="icon-button"><i data-lucide="copy"></i><span>สำเนาวัตถุ</span></div>
+          <div class="icon-button"><i data-lucide="square-dashed-mouse-pointer"></i><span>สำเนาพื้นที่</span></div>
+        </div>
+        <p class="reason">รูปซ้อนกันสื่อถึงการทำสำเนา ส่วนกรอบเส้นประพร้อมตัวชี้สื่อว่าต้องลากเลือกพื้นที่</p>
+      </article>
+      <article class="option">
+        <h2>B — เน้นการเพิ่มสำเนา</h2>
+        <div class="icon-pair">
+          <div class="icon-button"><i data-lucide="copy-plus"></i><span>สำเนาวัตถุ</span></div>
+          <div class="icon-button"><i data-lucide="scan-line"></i><span>สำเนาพื้นที่</span></div>
+        </div>
+        <p class="reason">มองเห็นเครื่องหมายเพิ่มชัด แต่ไอคอนพื้นที่ยังอาจถูกเข้าใจว่าเป็น OCR หรือการสแกน</p>
+      </article>
+      <article class="option">
+        <h2>C — อิงภาพคลิปบอร์ด</h2>
+        <div class="icon-pair">
+          <div class="icon-button"><i data-lucide="clipboard-copy"></i><span>สำเนาวัตถุ</span></div>
+          <div class="icon-button"><i data-lucide="mouse-pointer-square-dashed"></i><span>สำเนาพื้นที่</span></div>
+        </div>
+        <p class="reason">คุ้นเคยกับงานคัดลอก แต่คลิปบอร์ดอาจทำให้ผู้ใช้คิดว่าเป็นการคัดลอกออกนอกโปรแกรม</p>
+      </article>
+    </section>
+
+    <section class="preview">
+      <div class="window-title"><div class="app"><span class="logo"><i data-lucide="scan"></i></span>SnapZy Image Editor</div><span>Project 1 • v0.1.1</span></div>
+      <div class="toolbar">
+        <button class="tool active"><i data-lucide="mouse-pointer-2"></i></button>
+        <button class="tool"><i data-lucide="crop"></i></button>
+        <button class="tool area"><i data-lucide="square-dashed-mouse-pointer"></i></button>
+        <div class="toolbar-sep"></div>
+        <button class="tool"><i data-lucide="pen-line"></i></button>
+        <button class="tool"><i data-lucide="highlighter"></i></button>
+        <button class="tool"><i data-lucide="minus"></i></button>
+        <button class="tool"><i data-lucide="move-up-right"></i></button>
+        <button class="tool"><i data-lucide="square"></i></button>
+        <button class="tool"><i data-lucide="type"></i></button>
+        <button class="tool"><i data-lucide="message-square"></i></button>
+        <div class="toolbar-sep"></div>
+        <button class="tool"><i data-lucide="copy"></i></button>
+        <span class="toolbar-label">ทุกปุ่มมี Tooltip ภาษา EN/TH</span>
+      </div>
+      <div class="workspace">
+        <div class="canvas">
+          <div class="canvas-head">ตัวอย่างภาพในพื้นที่แก้ไข</div>
+          <div class="rows">
+            <div class="row"><span></span><span></span><span></span></div><div class="row"><span></span><span></span><span></span></div><div class="row"><span></span><span></span><span></span></div><div class="row"><span></span><span></span><span></span></div><div class="row"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+        <div class="selected-object"></div>
+        <div class="menu object">
+          <div class="menu-title">คลิกขวาบนวัตถุ</div>
+          <div class="menu-item primary"><i data-lucide="copy"></i><span>สำเนาวัตถุ</span><span class="shortcut">Ctrl+D</span></div>
+          <div class="menu-item"><i data-lucide="layers-3"></i><span>จัดลำดับชั้น</span></div>
+          <div class="menu-item danger"><i data-lucide="trash-2"></i><span>ลบ</span><span class="shortcut">Del</span></div>
+        </div>
+        <div class="menu blank">
+          <div class="menu-title">คลิกขวาบนพื้นที่ว่าง</div>
+          <div class="menu-item primary"><i data-lucide="square-dashed-mouse-pointer"></i><span>สำเนาพื้นที่</span></div>
+        </div>
+        <div class="cursor"><i data-lucide="mouse-pointer-2"></i></div>
+      </div>
+      <div class="legend"><span><strong>คลิกขวาบนวัตถุ:</strong> เลือกวัตถุและเปิดเมนูทันที</span><span><strong>คลิกขวาพื้นที่ว่าง:</strong> เปิดคำสั่งสำเนาพื้นที่</span><span><strong>การลาก:</strong> แสดงกรอบเส้นประและสร้างวัตถุภาพใหม่ โดยต้นฉบับคงเดิม</span></div>
+    </section>
+  </main>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js"></script>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

@@ -167,6 +167,10 @@ impl EditorWorkspace {
             .unwrap_or_default()
     }
 
+    pub fn hosts(&self) -> Vec<String> {
+        self.hosts.keys().cloned().collect()
+    }
+
     pub fn active(&self, label: &str) -> Option<&str> {
         self.hosts.get(label)?.active.as_deref()
     }

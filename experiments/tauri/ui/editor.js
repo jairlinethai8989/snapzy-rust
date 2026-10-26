@@ -9,7 +9,7 @@ import {
 } from "lucide";
 import {
   EDITOR_FONTS, EDITOR_PALETTE, EDITOR_TOOL_GROUPS, backendCommand, clampContextMenuPosition, contextMenuActions, createCommandQueue, hexToRgb, isContextMenuKey,
-  moveMenuFocus, normalizeEditor, normalizeEffects, rgbToHex, screenToDocument, selectionGuide, selectionHandleAt, selectionOverlayToScreen, shouldDuplicateShortcut, steppedZoom, zoomAround, ZOOM_STEPS, pngDownloadName,
+  moveMenuFocus, normalizeEditor, normalizeEffects, rgbToHex, screenToDocument, selectionGuide, selectionHandleAt, selectionOverlayToScreen, shouldDuplicateShortcut, shouldHandleCanvasShortcuts, steppedZoom, zoomAround, ZOOM_STEPS, pngDownloadName,
 } from "./editor-state.js";
 import {
   commandForSession, normalizeWorkspace, removeWorkspaceTab, selectWorkspaceTab,
@@ -41,6 +41,10 @@ let spaceDown = false;
 let textPoint = null;
 let workspaceRefreshPending = false;
 let stopWorkspaceListener = null;
+let stopWindowCloseListener = null;
+let stopApplicationCloseListener = null;
+let closeDecisionResolve = null;
+let closingWindow = false;
 const sessionViewports = new Map();
 const recentColorKey = "snapzy-editor-recent-colors-v1";
 let recentColors = [];
@@ -386,8 +390,9 @@ function showMenu(owner) {
       popupItem(t("openImage"), "folder-open", () => $("#open-image").click()),
       popupItem(t("addImage"), "image-plus", () => notice(t("notAvailable"))),
       popupItem(t("combine"), "images", () => notice(t("notAvailable"))),
-      popupItem(t("openProject"), "folder", () => notice(t("notAvailable"))),
-      popupItem(t("saveProject"), "save", () => notice(t("notAvailable"))),
+      popupItem(t("openProject"), "folder", () => void openProject()),
+      popupItem(t("saveProject"), "save", () => void saveProject(false)),
+      popupItem(t("saveProjectAs"), "save", () => void saveProject(true)),
     );
   }
   menuOwner = owner;
@@ -517,6 +522,15 @@ async function activateSession(sessionId) {
 
 async function closeSession(sessionId) {
   if (!native || busy) return;
+  if (sessionId !== workspace.activeSessionId) {
+    await activateSession(sessionId);
+    if (workspace.activeSessionId !== sessionId) return;
+  }
+  if (state.view?.dirty === true) {
+    const decision = await askCloseDecision();
+    if (decision === "cancel") return;
+    if (decision === "save" && !(await saveProject(false))) return;
+  }
   setBusy(true);
   clearNotice();
   try {
@@ -545,6 +559,93 @@ async function closeSession(sessionId) {
     notice(`${t("commandFailed")} ${String(error)}`);
   } finally {
     setBusy(false);
+  }
+}
+
+function askCloseDecision() {
+  const dialog = $("#close-dialog");
+  return new Promise((resolve) => {
+    closeDecisionResolve = resolve;
+    dialog.showModal();
+    requestAnimationFrame(() => $("#close-save")?.focus());
+  });
+}
+
+function finishCloseDecision(value) {
+  const resolve = closeDecisionResolve;
+  closeDecisionResolve = null;
+  $("#close-dialog")?.close();
+  resolve?.(value);
+}
+
+function isCancelled(error) {
+  return String(error).toLowerCase().includes("cancelled");
+}
+
+async function saveProject(saveAs = false) {
+  if (!native || !workspace.activeSessionId || busy) return false;
+  const sessionId = workspace.activeSessionId;
+  setBusy(true);
+  clearNotice();
+  try {
+    const result = await invoke("editor_save_project", { sessionId, saveAs });
+    syncView(result.view);
+    await reloadWorkspace(sessionId);
+    await refreshPreview();
+    notice(t("projectSaved"));
+    return true;
+  } catch (error) {
+    if (!isCancelled(error)) notice(`${t("commandFailed")} ${String(error)}`);
+    return false;
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function openProject() {
+  if (!native || busy) return;
+  setBusy(true);
+  clearNotice();
+  try {
+    const result = await invoke("editor_open_project");
+    await reloadWorkspace(result.session_id);
+    const view = await invoke("editor_activate", { sessionId: result.session_id });
+    loadedSessionId = result.session_id;
+    syncView(view);
+    await refreshPreview();
+    requestAnimationFrame(fitView);
+  } catch (error) {
+    if (!isCancelled(error)) notice(`${t("openFailed")} ${String(error)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function closeEditorWindow(application = false) {
+  if (!native || busy || closingWindow) return;
+  closingWindow = true;
+  try {
+    const ids = workspace.tabs.map((tab) => tab.sessionId);
+    for (const sessionId of ids) {
+      if (workspace.activeSessionId !== sessionId) {
+        const view = await invoke("editor_activate", { sessionId });
+        workspace = selectWorkspaceTab(workspace, sessionId);
+        loadedSessionId = sessionId;
+        syncView(view);
+        await refreshPreview();
+      }
+      if (state.view?.dirty === true) {
+        const decision = await askCloseDecision();
+        if (decision === "cancel") return;
+        if (decision === "save" && !(await saveProject(false))) return;
+      }
+    }
+    await invoke("editor_close_window", { application });
+    await window.__TAURI__?.window?.getCurrentWindow?.().close();
+  } catch (error) {
+    if (!isCancelled(error)) notice(`${t("commandFailed")} ${String(error)}`);
+  } finally {
+    closingWindow = false;
   }
 }
 
@@ -965,7 +1066,8 @@ document.addEventListener("click", (event) => {
   if (button.dataset.menu) return showMenu(button);
   if (button.dataset.tool) return void chooseTool(button.dataset.tool);
   if (button.dataset.command) return void applyCommand(backendCommand(button.dataset.command));
-  if (button.dataset.closeDialog) document.getElementById(button.dataset.closeDialog).close();
+  if (button.dataset.closeDialog === "close-dialog") finishCloseDecision("cancel");
+  else if (button.dataset.closeDialog) document.getElementById(button.dataset.closeDialog).close();
   if (!event.target.closest("#editor-popup")) closeMenu();
 });
 
@@ -986,6 +1088,10 @@ $("#text-dialog").addEventListener("close", () => { textPoint = null; });
 $("#copy-button").addEventListener("click", () => void copyPng());
 $("#save-png").addEventListener("click", () => void savePng());
 $("#notice-close").addEventListener("click", clearNotice);
+$("#close-save").addEventListener("click", () => finishCloseDecision("save"));
+$("#close-discard").addEventListener("click", () => finishCloseDecision("discard"));
+$("#close-cancel").addEventListener("click", () => finishCloseDecision("cancel"));
+$("#close-dialog").addEventListener("cancel", (event) => { event.preventDefault(); finishCloseDecision("cancel"); });
 $("#fit-view").addEventListener("click", fitView);
 $("#zoom-out").addEventListener("click", () => setZoomAtCenter(steppedZoom(state.zoom, -1)));
 $("#zoom-in").addEventListener("click", () => setZoomAtCenter(steppedZoom(state.zoom, 1)));
@@ -1096,6 +1202,10 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     return;
   }
+  if (!shouldHandleCanvasShortcuts({ editing, composing: event.isComposing === true })) {
+    if (event.key === "Escape" && document.querySelector("dialog[open]")) document.querySelector("dialog[open]").close();
+    return;
+  }
   if (isContextMenuKey(event) && !editing && state.view) {
     const bounds = $("#editor-canvas").getBoundingClientRect();
     showContextMenu({ x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 }, state.view.selected === true);
@@ -1103,7 +1213,13 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (event.code === "Space" && !event.repeat) { spaceDown = true; event.preventDefault(); }
-  if (event.key === "Escape") { if (menuOwner) closeMenu(true); else if (document.querySelector("dialog[open]")) document.querySelector("dialog[open]").close(); else { pointer = null; draft = null; void applyCommand(backendCommand("cancel"), false); renderCanvas(); } }
+  if (event.key === "Escape") {
+    if (menuOwner) closeMenu(true);
+    else if (document.querySelector("dialog[open]")) {
+      const dialog = document.querySelector("dialog[open]");
+      if (dialog.id === "close-dialog") finishCloseDecision("cancel"); else dialog.close();
+    } else { pointer = null; draft = null; void applyCommand(backendCommand("cancel"), false); renderCanvas(); }
+  }
   if (event.key === "Delete") void applyCommand(backendCommand("delete"));
   if (event.ctrlKey && event.key.toLowerCase() === "z") { event.preventDefault(); void applyCommand(backendCommand(event.shiftKey ? "redo" : "undo")); }
   if (event.ctrlKey && event.key.toLowerCase() === "y") { event.preventDefault(); void applyCommand(backendCommand("redo")); }
@@ -1137,6 +1253,8 @@ window.addEventListener("blur", () => { spaceDown = false; closeMenu(); dismissT
 window.addEventListener("beforeunload", () => {
   if (previewUrl) URL.revokeObjectURL(previewUrl);
   if (typeof stopWorkspaceListener === "function") stopWorkspaceListener();
+  if (typeof stopWindowCloseListener === "function") stopWindowCloseListener();
+  if (typeof stopApplicationCloseListener === "function") stopApplicationCloseListener();
 });
 
 for (const font of EDITOR_FONTS) {
@@ -1159,6 +1277,14 @@ if (native) {
         stopWorkspaceListener = await window.__TAURI__.event.listen(
           "editor-sessions-changed",
           () => void refreshWorkspaceEvent(),
+        );
+        stopWindowCloseListener = await window.__TAURI__.event.listen(
+          "editor-window-close-requested",
+          () => void closeEditorWindow(),
+        );
+        stopApplicationCloseListener = await window.__TAURI__.event.listen(
+          "application-close-requested",
+          () => void closeEditorWindow(true),
         );
       }
       await bootstrapWorkspace();

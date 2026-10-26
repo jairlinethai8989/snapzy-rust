@@ -100,7 +100,7 @@ enum Payload {
         text: String,
         size: u32,
         #[serde(default)]
-        font: FontFamily,
+        font: Option<FontFamily>,
         wrap_width: Option<u32>,
         mask: u64,
         background: Background,
@@ -368,7 +368,7 @@ pub fn encode(frame: &Arc<Frame>, document: &Document) -> Result<Vec<u8>, String
                     } => Payload::Text {
                         text: text.to_string(),
                         size: *size,
-                        font: *font,
+                        font: Some(*font),
                         wrap_width: *wrap_width,
                         mask: id,
                         background: *background,
@@ -728,7 +728,11 @@ fn decode_budget(bytes: &[u8], budget: usize) -> Result<Project, String> {
                 Content::Text {
                     text: Arc::from(text),
                     size,
-                    font,
+                    font: font.unwrap_or(if m.schema < 5 {
+                        FontFamily::SegoeUi
+                    } else {
+                        FontFamily::default()
+                    }),
                     wrap_width,
                     mask: masks.get(&mask).ok_or("Missing glyph")?.clone(),
                     background,

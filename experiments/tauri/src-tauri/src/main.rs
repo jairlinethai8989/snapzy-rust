@@ -62,6 +62,7 @@ struct EditorState {
 struct EditorSession {
     process: EditorProcess,
     title: String,
+    project_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Serialize)]
@@ -159,6 +160,16 @@ impl EditorProcess {
             .ok_or_else(|| "The editor did not return a document.".to_string());
         let _ = std::fs::remove_file(self.directory.join("source-image"));
         result
+    }
+
+    fn open_project(&mut self, path: &PathBuf) -> Result<Value, String> {
+        self.request(json!({ "type": "open_project", "path": path }))?
+            .ok_or_else(|| "The editor did not return a project.".to_string())
+    }
+
+    fn save_project(&mut self, path: &PathBuf) -> Result<Value, String> {
+        self.request(json!({ "type": "save_project", "path": path }))?
+            .ok_or_else(|| "The editor did not return a project.".to_string())
     }
 
     fn apply(&mut self, command: Value) -> Result<Value, String> {
@@ -364,6 +375,7 @@ fn editor_open(
     let session_id = state.sessions.insert(EditorSession {
         process,
         title: clean_title(&name),
+        project_path: None,
     })?;
     if !state.workspace.add_to_host(&label, &session_id) {
         if let Some(mut session) = state.sessions.remove(&session_id) {
@@ -372,6 +384,123 @@ fn editor_open(
         return Err("The editor window is no longer available.".into());
     }
     Ok(json!({ "session_id": session_id, "view": view }))
+}
+
+fn project_dialog(window: &tauri::WebviewWindow, save: bool) -> Result<Option<PathBuf>, String> {
+    use windows_sys::Win32::UI::Controls::Dialogs::{
+        GetOpenFileNameW, GetSaveFileNameW, OPENFILENAMEW, OFN_EXPLORER, OFN_FILEMUSTEXIST,
+        OFN_HIDEREADONLY, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST,
+    };
+    let filter: Vec<u16> = "SnapZy project (*.snapzy)\0*.snapzy\0All files (*.*)\0*.*\0\0"
+        .encode_utf16()
+        .collect();
+    let title: Vec<u16> = if save {
+        "Save SnapZy project\0".encode_utf16().collect()
+    } else {
+        "Open SnapZy project\0".encode_utf16().collect()
+    };
+    let default_extension: Vec<u16> = "snapzy\0".encode_utf16().collect();
+    let mut file = vec![0u16; 32_768];
+    let mut dialog = OPENFILENAMEW {
+        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: window.hwnd().map_err(|e| e.to_string())?.0,
+        hInstance: std::ptr::null_mut(),
+        lpstrFilter: filter.as_ptr(),
+        lpstrCustomFilter: std::ptr::null_mut(),
+        nMaxCustFilter: 0,
+        nFilterIndex: 1,
+        lpstrFile: file.as_mut_ptr(),
+        nMaxFile: file.len() as u32,
+        lpstrFileTitle: std::ptr::null_mut(),
+        nMaxFileTitle: 0,
+        lpstrInitialDir: std::ptr::null(),
+        lpstrTitle: title.as_ptr(),
+        Flags: OFN_EXPLORER | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST
+            | if save { OFN_OVERWRITEPROMPT } else { OFN_FILEMUSTEXIST },
+        nFileOffset: 0,
+        nFileExtension: 0,
+        lpstrDefExt: default_extension.as_ptr(),
+        lCustData: 0,
+        lpfnHook: None,
+        lpTemplateName: std::ptr::null(),
+        pvReserved: std::ptr::null_mut(),
+        dwReserved: 0,
+        FlagsEx: 0,
+    };
+    let accepted = unsafe {
+        if save { GetSaveFileNameW(&mut dialog) } else { GetOpenFileNameW(&mut dialog) }
+    };
+    if accepted == 0 {
+        return Ok(None);
+    }
+    let length = file.iter().position(|value| *value == 0).unwrap_or(file.len());
+    Ok(Some(PathBuf::from(String::from_utf16_lossy(&file[..length]))))
+}
+
+#[tauri::command]
+fn editor_open_project(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Arc<Engine>>,
+) -> Result<Value, String> {
+    let Some(path) = project_dialog(&window, false)? else {
+        return Err("Project open cancelled.".into());
+    };
+    let mut process = EditorProcess::start(&app)?;
+    let view = process.open_project(&path)?;
+    let title = clean_title(path.file_name().and_then(|name| name.to_str()).unwrap_or("Project"));
+    let mut state = engine
+        .editors
+        .lock()
+        .map_err(|_| "The editor service is unavailable.")?;
+    let session_id = state.sessions.insert(EditorSession {
+        process,
+        title,
+        project_path: Some(path),
+    })?;
+    if !state.workspace.add_to_host(window.label(), &session_id) {
+        if let Some(mut session) = state.sessions.remove(&session_id) {
+            session.process.shutdown();
+        }
+        return Err("The editor window is no longer available.".into());
+    }
+    Ok(json!({ "session_id": session_id, "view": view }))
+}
+
+#[tauri::command]
+fn editor_save_project(
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Arc<Engine>>,
+    session_id: String,
+    save_as: bool,
+) -> Result<Value, String> {
+    let existing = {
+        let state = engine
+            .editors
+            .lock()
+            .map_err(|_| "The editor service is unavailable.")?;
+        if state.workspace.host_for(&session_id) != Some(window.label()) {
+            return Err("The editor session does not belong to this window.".into());
+        }
+        state.sessions.get(&session_id).and_then(|session| session.project_path.clone())
+    };
+    let path = if !save_as {
+        existing.unwrap_or(project_dialog(&window, true)?.ok_or("Project save cancelled.")?)
+    } else {
+        project_dialog(&window, true)?.ok_or("Project save cancelled.")?
+    };
+    let mut state = engine
+        .editors
+        .lock()
+        .map_err(|_| "The editor service is unavailable.")?;
+    if state.workspace.host_for(&session_id) != Some(window.label()) {
+        return Err("The editor session does not belong to this window.".into());
+    }
+    let session = editor_session_mut(&mut state, &session_id)?;
+    let view = session.process.save_project(&path)?;
+    session.project_path = Some(path.clone());
+    session.title = clean_title(path.file_name().and_then(|name| name.to_str()).unwrap_or("Project"));
+    Ok(json!({ "view": view, "path": path }))
 }
 
 #[tauri::command]
@@ -461,6 +590,40 @@ fn editor_close(
     Ok(editor_bootstrap(&state, window.label()))
 }
 
+#[tauri::command]
+fn editor_close_window(
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Arc<Engine>>,
+    application: bool,
+) -> Result<(), String> {
+    let sessions = {
+        let mut state = engine
+            .editors
+            .lock()
+            .map_err(|_| "The editor service is unavailable.")?;
+        let ids = state.workspace.remove_host(window.label());
+        ids.into_iter()
+            .filter_map(|id| state.sessions.remove(&id))
+            .collect::<Vec<_>>()
+    };
+    for mut session in sessions {
+        session.process.shutdown();
+    }
+    if application {
+        let no_sessions = engine
+            .editors
+            .lock()
+            .map(|state| state.sessions.len() == 0)
+            .unwrap_or(false);
+        if no_sessions {
+            if let Some(main) = window.app_handle().get_webview_window("main") {
+                let _ = main.close();
+            }
+        }
+    }
+    Ok(())
+}
+
 fn capture_title(kind: CaptureKind) -> &'static str {
     match kind {
         CaptureKind::Area => "Area capture",
@@ -513,7 +676,7 @@ fn open_capture_result(
             .editors
             .lock()
             .map_err(|_| "The editor service is unavailable.")?;
-        let session_id = match state.sessions.insert(EditorSession { process, title }) {
+        let session_id = match state.sessions.insert(EditorSession { process, title, project_path: None }) {
             Ok(session_id) => session_id,
             Err(error) => return Err(error),
         };
@@ -840,25 +1003,36 @@ fn main() {
             editor_activate,
             editor_apply,
             editor_preview,
-            editor_close
+            editor_close,
+            editor_open_project,
+            editor_save_project,
+            editor_close_window
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let engine = Arc::clone(window.state::<Arc<Engine>>().inner());
                 if window.label() != "main" {
-                    let sessions = if let Ok(mut state) = engine.editors.lock() {
-                        let ids = state.workspace.remove_host(window.label());
-                        ids.into_iter()
-                            .filter_map(|id| state.sessions.remove(&id))
-                            .collect::<Vec<_>>()
-                    } else {
-                        Vec::new()
-                    };
-                    thread::spawn(move || {
-                        for mut session in sessions {
-                            session.process.shutdown();
-                        }
-                    });
+                    let has_sessions = engine
+                        .editors
+                        .lock()
+                        .map(|state| !state.workspace.sessions(window.label()).is_empty())
+                        .unwrap_or(false);
+                    if has_sessions {
+                        api.prevent_close();
+                        let _ = window.emit("editor-window-close-requested", ());
+                    }
+                    return;
+                }
+                let editor_hosts = engine
+                    .editors
+                    .lock()
+                    .map(|state| state.workspace.hosts())
+                    .unwrap_or_default();
+                if !editor_hosts.is_empty() {
+                    api.prevent_close();
+                    for label in editor_hosts {
+                        let _ = window.emit_to(&label, "application-close-requested", ());
+                    }
                     return;
                 }
                 api.prevent_close();
