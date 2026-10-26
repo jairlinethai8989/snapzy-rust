@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use std::{
     io::{BufRead, BufReader, Write},
     os::windows::process::CommandExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
         Arc, Mutex,
@@ -160,6 +160,11 @@ impl EditorProcess {
             .ok_or_else(|| "The editor did not return a document.".to_string());
         let _ = std::fs::remove_file(self.directory.join("source-image"));
         result
+    }
+
+    fn open_path(&mut self, path: &PathBuf) -> Result<Value, String> {
+        self.request(json!({ "type": "open", "path": path }))?
+            .ok_or_else(|| "The editor did not return a document.".to_string())
     }
 
     fn open_project(&mut self, path: &PathBuf) -> Result<Value, String> {
@@ -386,21 +391,135 @@ fn editor_open(
     Ok(json!({ "session_id": session_id, "view": view }))
 }
 
-fn project_dialog(window: &tauri::WebviewWindow, save: bool) -> Result<Option<PathBuf>, String> {
+#[tauri::command]
+fn editor_open_image(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Arc<Engine>>,
+) -> Result<Value, String> {
+    let Some(path) = image_open_dialog(&window)? else {
+        return Err("Image open cancelled.".into());
+    };
+    let mut process = EditorProcess::start(&app)?;
+    let view = process.open_path(&path)?;
+    let label = window.label().to_string();
+    let title = clean_title(path.file_name().and_then(|name| name.to_str()).unwrap_or("Image"));
+    let mut state = engine
+        .editors
+        .lock()
+        .map_err(|_| "The editor service is unavailable.")?;
+    let session_id = state.sessions.insert(EditorSession {
+        process,
+        title,
+        project_path: None,
+    })?;
+    if !state.workspace.add_to_host(&label, &session_id) {
+        if let Some(mut session) = state.sessions.remove(&session_id) {
+            session.process.shutdown();
+        }
+        return Err("The editor window is no longer available.".into());
+    }
+    Ok(json!({ "session_id": session_id, "view": view }))
+}
+
+#[tauri::command]
+fn editor_open_image_window(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Arc<Engine>>,
+) -> Result<(), String> {
+    let Some(path) = image_open_dialog(&window)? else {
+        return Ok(());
+    };
+    let engine = Arc::clone(engine.inner());
+    thread::spawn(move || {
+        if let Err(error) = open_image_path_in_new_window(&app, &engine, &path) {
+            report_capture_error(&app, error);
+        }
+    });
+    Ok(())
+}
+
+fn open_image_path_in_new_window(
+    app: &tauri::AppHandle,
+    engine: &Arc<Engine>,
+    path: &PathBuf,
+) -> Result<(), String> {
+    let label = {
+        let mut state = engine
+            .editors
+            .lock()
+            .map_err(|_| "The editor service is unavailable.")?;
+        state.workspace.create_host()
+    };
+    let mut process = match EditorProcess::start(app) {
+        Ok(process) => process,
+        Err(error) => {
+            if let Ok(mut state) = engine.editors.lock() {
+                state.workspace.remove_host(&label);
+            }
+            return Err(error);
+        }
+    };
+    if let Err(error) = process.open_path(path) {
+        process.shutdown();
+        if let Ok(mut state) = engine.editors.lock() {
+            state.workspace.remove_host(&label);
+        }
+        return Err(error);
+    }
+    let title = clean_title(path.file_name().and_then(|name| name.to_str()).unwrap_or("Image"));
+    let session_id = {
+        let mut state = engine
+            .editors
+            .lock()
+            .map_err(|_| "The editor service is unavailable.")?;
+        let session_id = state.sessions.insert(EditorSession {
+            process,
+            title,
+            project_path: None,
+        })?;
+        if !state.workspace.add_to_host(&label, &session_id) {
+            if let Some(mut session) = state.sessions.remove(&session_id) {
+                session.process.shutdown();
+            }
+            state.workspace.remove_host(&label);
+            return Err("The editor window is no longer available.".into());
+        }
+        session_id
+    };
+    if let Err(error) = create_editor_window(app, &label) {
+        remove_editor_session(engine, &session_id);
+        return Err(error);
+    }
+    app.emit_to(&label, "editor-sessions-changed", ())
+        .map_err(|e| e.to_string())?;
+    if let Some(editor_window) = app.get_webview_window(&label) {
+        let _ = editor_window.show();
+        let _ = editor_window.set_focus();
+    }
+    Ok(())
+}
+
+fn native_file_dialog(
+    window: &tauri::WebviewWindow,
+    save: bool,
+    filter_text: &str,
+    title_text: &str,
+    extension: &str,
+    initial_name: &str,
+) -> Result<Option<PathBuf>, String> {
     use windows_sys::Win32::UI::Controls::Dialogs::{
         GetOpenFileNameW, GetSaveFileNameW, OPENFILENAMEW, OFN_EXPLORER, OFN_FILEMUSTEXIST,
         OFN_HIDEREADONLY, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST,
     };
-    let filter: Vec<u16> = "SnapZy project (*.snapzy)\0*.snapzy\0All files (*.*)\0*.*\0\0"
-        .encode_utf16()
-        .collect();
-    let title: Vec<u16> = if save {
-        "Save SnapZy project\0".encode_utf16().collect()
-    } else {
-        "Open SnapZy project\0".encode_utf16().collect()
-    };
-    let default_extension: Vec<u16> = "snapzy\0".encode_utf16().collect();
+    let filter: Vec<u16> = filter_text.encode_utf16().collect();
+    let title: Vec<u16> = title_text.encode_utf16().collect();
+    let default_extension: Vec<u16> = format!("{extension}\0").encode_utf16().collect();
     let mut file = vec![0u16; 32_768];
+    let initial: Vec<u16> = initial_name.encode_utf16().collect();
+    let copy_length = initial.len().min(file.len().saturating_sub(1));
+    file[..copy_length].copy_from_slice(&initial[..copy_length]);
     let mut dialog = OPENFILENAMEW {
         lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
         hwndOwner: window.hwnd().map_err(|e| e.to_string())?.0,
@@ -435,6 +554,42 @@ fn project_dialog(window: &tauri::WebviewWindow, save: bool) -> Result<Option<Pa
     }
     let length = file.iter().position(|value| *value == 0).unwrap_or(file.len());
     Ok(Some(PathBuf::from(String::from_utf16_lossy(&file[..length]))))
+}
+
+fn project_dialog(window: &tauri::WebviewWindow, save: bool) -> Result<Option<PathBuf>, String> {
+    native_file_dialog(
+        window,
+        save,
+        "SnapZy project (*.snapzy)\0*.snapzy\0All files (*.*)\0*.*\0\0",
+        if save { "Save SnapZy project\0" } else { "Open SnapZy project\0" },
+        "snapzy",
+        "",
+    )
+}
+
+fn image_open_dialog(window: &tauri::WebviewWindow) -> Result<Option<PathBuf>, String> {
+    native_file_dialog(
+        window,
+        false,
+        "Image files (*.png;*.jpg;*.jpeg;*.bmp)\0*.png;*.jpg;*.jpeg;*.bmp\0All files (*.*)\0*.*\0\0",
+        "Open image\0",
+        "",
+        "",
+    )
+}
+
+fn png_save_dialog(
+    window: &tauri::WebviewWindow,
+    initial_name: &str,
+) -> Result<Option<PathBuf>, String> {
+    native_file_dialog(
+        window,
+        true,
+        "PNG image (*.png)\0*.png\0All files (*.*)\0*.*\0\0",
+        "Save PNG\0",
+        "png",
+        initial_name,
+    )
 }
 
 #[tauri::command]
@@ -567,6 +722,46 @@ fn editor_preview(
         .process
         .preview()?;
     Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[tauri::command]
+fn editor_save_png(
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Arc<Engine>>,
+    session_id: String,
+) -> Result<Value, String> {
+    let title = {
+        let state = engine
+            .editors
+            .lock()
+            .map_err(|_| "The editor service is unavailable.")?;
+        if state.workspace.host_for(&session_id) != Some(window.label()) {
+            return Err("The editor session does not belong to this window.".into());
+        }
+        state
+            .sessions
+            .get(&session_id)
+            .map(|session| session.title.clone())
+            .ok_or_else(|| "The editor session is no longer available.".to_string())?
+    };
+    let stem = Path::new(&title)
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&title);
+    let initial_name = format!("{}.png", clean_title(stem));
+    let Some(path) = png_save_dialog(&window, &initial_name)? else {
+        return Err("PNG save cancelled.".into());
+    };
+    let mut state = engine
+        .editors
+        .lock()
+        .map_err(|_| "The editor service is unavailable.")?;
+    if state.workspace.host_for(&session_id) != Some(window.label()) {
+        return Err("The editor session does not belong to this window.".into());
+    }
+    let bytes = editor_session_mut(&mut state, &session_id)?.process.preview()?;
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(json!({ "path": path.to_string_lossy().to_string() }))
 }
 
 #[tauri::command]
@@ -999,10 +1194,13 @@ fn main() {
             editor_window_mode,
             editor_new_window,
             editor_open,
+            editor_open_image,
+            editor_open_image_window,
             editor_tabs,
             editor_activate,
             editor_apply,
             editor_preview,
+            editor_save_png,
             editor_close,
             editor_open_project,
             editor_save_project,

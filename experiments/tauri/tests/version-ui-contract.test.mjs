@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const expectedVersion = "0.15.0-alpha.6";
+const expectedVersion = "0.15.0-alpha.8";
 const versionPattern = new RegExp(expectedVersion.replaceAll(".", "\\."));
 const root = new URL("..", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -39,6 +39,35 @@ test("SnapZy manifests, engine and visible UI report one product version", async
   assert.match(packaging, /SnapZy-\$\{version\}-win-x64/);
   assert.match(packaging, /SnapZy-Setup-\$\{version\}-win-x64\.exe/);
   assert.match(packaging, /startsWith\("SnapZy Rust_"\)/);
+});
+
+test("native image open and PNG save use Windows file dialogs instead of WebView downloads", async () => {
+  const editor = await read("ui/editor.js");
+  const nativeMain = await read("src-tauri/src/main.rs");
+  assert.match(editor, /invoke\("editor_open_image"/);
+  assert.match(editor, /invoke\("editor_save_png"/);
+  assert.match(nativeMain, /fn editor_open_image\(/);
+  assert.match(nativeMain, /fn editor_save_png\(/);
+  assert.match(nativeMain, /editor_open_image,.*editor_save_png/s);
+});
+
+test("launcher Open image opens a real image instead of creating a blank editor", async () => {
+  const launcherScript = await read("ui/main.js");
+  const nativeMain = await read("src-tauri/src/main.rs");
+  assert.match(launcherScript, /invoke\("editor_open_image_window"/);
+  assert.doesNotMatch(launcherScript, /action === "open"\)\s*await[^;]+editor_new_window/);
+  assert.match(nativeMain, /fn editor_open_image_window\(/);
+  assert.match(nativeMain, /editor_open_image_window,/);
+});
+
+test("launcher image open returns before constructing the new WebView", async () => {
+  const nativeMain = await read("src-tauri/src/main.rs");
+
+  assert.match(
+    nativeMain,
+    /fn editor_open_image_window\([\s\S]*?Arc::clone\(engine\.inner\(\)\)[\s\S]*?thread::spawn\(move \|\|/,
+  );
+  assert.match(nativeMain, /fn open_image_path_in_new_window\(/);
 });
 
 test("Windows bundle is a current-user upgrade with guarded legacy migration", async () => {

@@ -1,6 +1,6 @@
 {
   "name": "snapzy-tauri-ui",
-  "version": "0.15.0-alpha.6",
+  "version": "0.15.0-alpha.8",
   "private": true,
   "type": "module",
   "scripts": {

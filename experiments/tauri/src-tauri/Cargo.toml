@@ -1,6 +1,6 @@
 [package]
 name = "snapzy-tauri"
-version = "0.15.0-alpha.6"
+version = "0.15.0-alpha.8"
 edition = "2024"
 license = "MIT"
 description = "SnapZy Windows capture interface built with Tauri and vanilla JavaScript"

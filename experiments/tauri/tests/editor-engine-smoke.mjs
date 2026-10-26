@@ -7,7 +7,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-const engine = path.join(root, "dist/SnapZy-0.15.0-alpha.6-win-x64/engine/snapzy-engine.exe");
+const engine = path.join(root, "dist/SnapZy-0.15.0-alpha.8-win-x64/engine/snapzy-engine.exe");
 const input = path.join(root, "tests/fixtures/ocr/english.png");
 const output = path.join(tmpdir(), "snapzy-tauri-editor-smoke.png");
 const project = path.join(tmpdir(), "snapzy-tauri-editor-smoke.snapzy");

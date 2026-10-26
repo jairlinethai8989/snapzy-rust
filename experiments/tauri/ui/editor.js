@@ -793,6 +793,29 @@ async function openImage(file) {
   }
 }
 
+async function openNativeImage() {
+  if (!native || busy) return;
+  setBusy(true);
+  clearNotice();
+  try {
+    const opened = await invoke("editor_open_image");
+    await reloadWorkspace(opened.session_id);
+    loadedSessionId = opened.session_id;
+    syncView(opened.view);
+    await refreshPreview();
+    requestAnimationFrame(fitView);
+  } catch (error) {
+    if (!isCancelled(error)) notice(t("openFailed") + " " + String(error));
+  } finally {
+    setBusy(false);
+  }
+}
+
+function requestOpenImage() {
+  if (native) void openNativeImage();
+  else $("#open-image").click();
+}
+
 async function refreshPreview() {
   const response = await invoke("editor_preview", commandForSession(workspace.activeSessionId));
   const bytes = response instanceof Uint8Array ? response : new Uint8Array(response);
@@ -832,6 +855,11 @@ async function savePng() {
   setBusy(true);
   clearNotice();
   try {
+    if (native) {
+      const result = await invoke("editor_save_png", { sessionId: workspace.activeSessionId });
+      notice((t("saved") + " " + (result.path ?? "")).trim());
+      return;
+    }
     const blob = await exportedPng();
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -1072,8 +1100,8 @@ document.addEventListener("click", (event) => {
 });
 
 $("#open-image").addEventListener("change", (event) => { void openImage(event.target.files[0]); event.target.value = ""; });
-$("#empty-open").addEventListener("click", () => $("#open-image").click());
-$(".new-tab").addEventListener("click", () => $("#open-image").click());
+$("#empty-open").addEventListener("click", requestOpenImage);
+$(".new-tab").addEventListener("click", requestOpenImage);
 $("#editor-language").addEventListener("click", () => {
   state = { ...state, language: state.language === "en" ? "th" : "en" };
   try { const saved = JSON.parse(localStorage.getItem(storageKey) || "{}"); localStorage.setItem(storageKey, JSON.stringify({ ...saved, language: state.language })); } catch { /* Optional storage. */ }

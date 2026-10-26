@@ -131,7 +131,7 @@ async function perform(action) {
   working = true;
   render();
   try {
-    if (action === "open") await window.__TAURI__.core.invoke("editor_new_window");
+    if (action === "open") await window.__TAURI__.core.invoke("editor_open_image_window");
     else await window.__TAURI__.core.invoke("desktop_action", { request: requestFor(state, action) });
     state = afterAction(state, action, true);
     save();

@@ -1,6 +1,6 @@
 [package]
 name = "snapzy-rust-preview"
-version = "0.15.0-alpha.6"
+version = "0.15.0-alpha.8"
 edition = "2024"
 license = "MIT"
 authors = ["jairlinethai"]
