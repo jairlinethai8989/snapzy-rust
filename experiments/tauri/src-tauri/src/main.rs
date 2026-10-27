@@ -12,6 +12,7 @@ use protocol::{Action, CaptureKind, EngineEvent, Request};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
+    collections::HashSet,
     io::{BufRead, BufReader, Write},
     os::windows::process::CommandExt,
     path::{Path, PathBuf},
@@ -175,6 +176,23 @@ impl EditorProcess {
     fn save_project(&mut self, path: &PathBuf) -> Result<Value, String> {
         self.request(json!({ "type": "save_project", "path": path }))?
             .ok_or_else(|| "The editor did not return a project.".to_string())
+    }
+
+    fn snapshot_project(&mut self, path: &PathBuf) -> Result<(), String> {
+        self.request(json!({ "type": "snapshot_project", "path": path }))?;
+        Ok(())
+    }
+
+    fn combine_projects(
+        &mut self,
+        paths: &[PathBuf],
+        layout: &str,
+        gap: u32,
+    ) -> Result<Value, String> {
+        self.request(
+            json!({ "type": "combine_projects", "paths": paths, "layout": layout, "gap": gap }),
+        )?
+        .ok_or_else(|| "The editor did not return a combined document.".to_string())
     }
 
     fn apply(&mut self, command: Value) -> Result<Value, String> {
@@ -403,7 +421,11 @@ fn editor_open_image(
     let mut process = EditorProcess::start(&app)?;
     let view = process.open_path(&path)?;
     let label = window.label().to_string();
-    let title = clean_title(path.file_name().and_then(|name| name.to_str()).unwrap_or("Image"));
+    let title = clean_title(
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Image"),
+    );
     let mut state = engine
         .editors
         .lock()
@@ -468,7 +490,11 @@ fn open_image_path_in_new_window(
         }
         return Err(error);
     }
-    let title = clean_title(path.file_name().and_then(|name| name.to_str()).unwrap_or("Image"));
+    let title = clean_title(
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Image"),
+    );
     let session_id = {
         let mut state = engine
             .editors
@@ -510,8 +536,8 @@ fn native_file_dialog(
     initial_name: &str,
 ) -> Result<Option<PathBuf>, String> {
     use windows_sys::Win32::UI::Controls::Dialogs::{
-        GetOpenFileNameW, GetSaveFileNameW, OPENFILENAMEW, OFN_EXPLORER, OFN_FILEMUSTEXIST,
-        OFN_HIDEREADONLY, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST,
+        GetOpenFileNameW, GetSaveFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY,
+        OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
     };
     let filter: Vec<u16> = filter_text.encode_utf16().collect();
     let title: Vec<u16> = title_text.encode_utf16().collect();
@@ -534,8 +560,14 @@ fn native_file_dialog(
         nMaxFileTitle: 0,
         lpstrInitialDir: std::ptr::null(),
         lpstrTitle: title.as_ptr(),
-        Flags: OFN_EXPLORER | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST
-            | if save { OFN_OVERWRITEPROMPT } else { OFN_FILEMUSTEXIST },
+        Flags: OFN_EXPLORER
+            | OFN_HIDEREADONLY
+            | OFN_PATHMUSTEXIST
+            | if save {
+                OFN_OVERWRITEPROMPT
+            } else {
+                OFN_FILEMUSTEXIST
+            },
         nFileOffset: 0,
         nFileExtension: 0,
         lpstrDefExt: default_extension.as_ptr(),
@@ -547,13 +579,22 @@ fn native_file_dialog(
         FlagsEx: 0,
     };
     let accepted = unsafe {
-        if save { GetSaveFileNameW(&mut dialog) } else { GetOpenFileNameW(&mut dialog) }
+        if save {
+            GetSaveFileNameW(&mut dialog)
+        } else {
+            GetOpenFileNameW(&mut dialog)
+        }
     };
     if accepted == 0 {
         return Ok(None);
     }
-    let length = file.iter().position(|value| *value == 0).unwrap_or(file.len());
-    Ok(Some(PathBuf::from(String::from_utf16_lossy(&file[..length]))))
+    let length = file
+        .iter()
+        .position(|value| *value == 0)
+        .unwrap_or(file.len());
+    Ok(Some(PathBuf::from(String::from_utf16_lossy(
+        &file[..length],
+    ))))
 }
 
 fn project_dialog(window: &tauri::WebviewWindow, save: bool) -> Result<Option<PathBuf>, String> {
@@ -561,7 +602,11 @@ fn project_dialog(window: &tauri::WebviewWindow, save: bool) -> Result<Option<Pa
         window,
         save,
         "SnapZy project (*.snapzy)\0*.snapzy\0All files (*.*)\0*.*\0\0",
-        if save { "Save SnapZy project\0" } else { "Open SnapZy project\0" },
+        if save {
+            "Save SnapZy project\0"
+        } else {
+            "Open SnapZy project\0"
+        },
         "snapzy",
         "",
     )
@@ -603,7 +648,11 @@ fn editor_open_project(
     };
     let mut process = EditorProcess::start(&app)?;
     let view = process.open_project(&path)?;
-    let title = clean_title(path.file_name().and_then(|name| name.to_str()).unwrap_or("Project"));
+    let title = clean_title(
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Project"),
+    );
     let mut state = engine
         .editors
         .lock()
@@ -623,6 +672,84 @@ fn editor_open_project(
 }
 
 #[tauri::command]
+fn editor_combine(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Arc<Engine>>,
+    session_ids: Vec<String>,
+    layout: String,
+    gap: u32,
+) -> Result<Value, String> {
+    if !(2..=16).contains(&session_ids.len())
+        || session_ids.iter().collect::<HashSet<_>>().len() != session_ids.len()
+    {
+        return Err("Choose 2-16 different image tabs to combine.".into());
+    }
+    if !matches!(layout.as_str(), "vertical" | "horizontal" | "free") || gap > 500 {
+        return Err("Choose a layout and a gap from 0 to 500 px.".into());
+    }
+    let mut process = EditorProcess::start(&app)?;
+    let mut state = engine
+        .editors
+        .lock()
+        .map_err(|_| "The editor service is unavailable.")?;
+    let mut paths = Vec::with_capacity(session_ids.len());
+    for (index, session_id) in session_ids.iter().enumerate() {
+        if state.workspace.host_for(session_id) != Some(window.label()) {
+            return Err("All selected images must be open in this editor window.".into());
+        }
+        let path = process
+            .directory
+            .join(format!("combine-source-{index}.snapzy"));
+        editor_session_mut(&mut state, session_id)?
+            .process
+            .snapshot_project(&path)?;
+        paths.push(path);
+    }
+    let result = process.combine_projects(&paths, &layout, if layout == "free" { 0 } else { gap });
+    for path in &paths {
+        let _ = std::fs::remove_file(path);
+    }
+    let view = result?;
+    let session_id = state.sessions.insert(EditorSession {
+        process,
+        title: "Combined images".into(),
+        project_path: None,
+    })?;
+    if !state.workspace.add_to_host(window.label(), &session_id) {
+        if let Some(mut session) = state.sessions.remove(&session_id) {
+            session.process.shutdown();
+        }
+        return Err("The editor window is no longer available.".into());
+    }
+    Ok(json!({ "session_id": session_id, "view": view }))
+}
+
+#[tauri::command]
+fn editor_combine_candidates(
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Arc<Engine>>,
+) -> Result<Value, String> {
+    let mut state = engine
+        .editors
+        .lock()
+        .map_err(|_| "The editor service is unavailable.")?;
+    let ids = state.workspace.sessions(window.label()).to_vec();
+    let mut candidates = Vec::with_capacity(ids.len());
+    for session_id in ids {
+        let session = editor_session_mut(&mut state, &session_id)?;
+        let view = session.process.view()?;
+        candidates.push(json!({
+            "session_id": session_id,
+            "title": session.title,
+            "width": view["width"],
+            "height": view["height"],
+        }));
+    }
+    Ok(json!(candidates))
+}
+
+#[tauri::command]
 fn editor_save_project(
     window: tauri::WebviewWindow,
     engine: tauri::State<'_, Arc<Engine>>,
@@ -637,7 +764,10 @@ fn editor_save_project(
         if state.workspace.host_for(&session_id) != Some(window.label()) {
             return Err("The editor session does not belong to this window.".into());
         }
-        state.sessions.get(&session_id).and_then(|session| session.project_path.clone())
+        state
+            .sessions
+            .get(&session_id)
+            .and_then(|session| session.project_path.clone())
     };
     let path = if !save_as {
         existing.unwrap_or(project_dialog(&window, true)?.ok_or("Project save cancelled.")?)
@@ -654,7 +784,11 @@ fn editor_save_project(
     let session = editor_session_mut(&mut state, &session_id)?;
     let view = session.process.save_project(&path)?;
     session.project_path = Some(path.clone());
-    session.title = clean_title(path.file_name().and_then(|name| name.to_str()).unwrap_or("Project"));
+    session.title = clean_title(
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Project"),
+    );
     Ok(json!({ "view": view, "path": path }))
 }
 
@@ -759,7 +893,9 @@ fn editor_save_png(
     if state.workspace.host_for(&session_id) != Some(window.label()) {
         return Err("The editor session does not belong to this window.".into());
     }
-    let bytes = editor_session_mut(&mut state, &session_id)?.process.preview()?;
+    let bytes = editor_session_mut(&mut state, &session_id)?
+        .process
+        .preview()?;
     std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
     Ok(json!({ "path": path.to_string_lossy().to_string() }))
 }
@@ -871,7 +1007,11 @@ fn open_capture_result(
             .editors
             .lock()
             .map_err(|_| "The editor service is unavailable.")?;
-        let session_id = match state.sessions.insert(EditorSession { process, title, project_path: None }) {
+        let session_id = match state.sessions.insert(EditorSession {
+            process,
+            title,
+            project_path: None,
+        }) {
             Ok(session_id) => session_id,
             Err(error) => return Err(error),
         };
@@ -1203,6 +1343,8 @@ fn main() {
             editor_save_png,
             editor_close,
             editor_open_project,
+            editor_combine,
+            editor_combine_candidates,
             editor_save_project,
             editor_close_window
         ])

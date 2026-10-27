@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const expectedVersion = "0.15.0-alpha.8";
+const expectedVersion = "0.15.0-alpha.10";
 const versionPattern = new RegExp(expectedVersion.replaceAll(".", "\\."));
 const root = new URL("..", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -68,6 +68,25 @@ test("launcher image open returns before constructing the new WebView", async ()
     /fn editor_open_image_window\([\s\S]*?Arc::clone\(engine\.inner\(\)\)[\s\S]*?thread::spawn\(move \|\|/,
   );
   assert.match(nativeMain, /fn open_image_path_in_new_window\(/);
+});
+
+test("editor window can close after the final tab or Close All", async () => {
+  const launcher = JSON.parse(await read("src-tauri/capabilities/default.json"));
+  const editor = JSON.parse(await read("src-tauri/capabilities/editor.json"));
+
+  assert.deepEqual(launcher.windows, ["main"]);
+  assert.deepEqual(editor.windows, ["editor-*"]);
+  assert.ok(editor.permissions.includes("core:window:allow-close"));
+});
+
+test("combine images opens an editable tab instead of an unavailable notice", async () => {
+  const editor = await read("ui/editor.js");
+  const nativeMain = await read("src-tauri/src/main.rs");
+  assert.match(editor, /invoke\("editor_combine"/);
+  assert.match(editor, /reloadWorkspace\(result\.session_id\)/);
+  assert.doesNotMatch(editor, /popupItem\(t\("combine"\)[^\n]*notAvailable/);
+  assert.match(nativeMain, /fn editor_combine\(/);
+  assert.match(nativeMain, /editor_combine,/);
 });
 
 test("Windows bundle is a current-user upgrade with guarded legacy migration", async () => {

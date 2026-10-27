@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
-    <title>SnapZy 0.15.0-alpha.8 | Image editor</title>
+    <title>SnapZy 0.15.0-alpha.10 | Image editor</title>
   </head>
   <body class="editor-page">
     <main class="editor-app" aria-label="SnapZy image editor">
@@ -23,6 +23,7 @@
         </div>
         <nav class="document-actions" aria-label="Document actions">
           <button id="more-button" class="command-button icon-only" type="button" data-menu="more" data-tooltip="more" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
+          <button id="combine-button" class="command-button icon-only" type="button" data-tooltip="combine" aria-label="Combine images" disabled><i data-lucide="images"></i></button>
           <button id="ocr-button" class="command-button icon-only secondary-command" type="button" data-tooltip="ocr" aria-label="OCR"><i data-lucide="scan-text"></i></button>
           <button id="help-button" class="command-button icon-only secondary-command" type="button" data-tooltip="help" aria-label="Help"><i data-lucide="circle-help"></i></button>
           <button id="editor-language" class="command-button language-button" type="button" data-tooltip="language">EN</button>
@@ -137,6 +138,19 @@
         <button id="close-discard" type="button" class="dialog-button" data-i18n="discard">Discard</button>
         <button id="close-save" type="button" class="dialog-button primary" data-i18n="save">Save</button>
       </footer>
+    </dialog>
+    <dialog id="combine-dialog" class="combine-dialog">
+      <header><div><span class="dialog-kicker">SnapZy</span><h2 data-i18n="combine">Combine images</h2></div><button class="dialog-close" type="button" data-close-dialog="combine-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>
+      <div class="combine-body">
+        <p data-i18n="combineHint">Choose at least two open tabs. Their editable objects will be preserved in a new project.</p>
+        <div id="combine-sources" class="combine-sources" role="group" aria-label="Images to combine"></div>
+        <div class="combine-options">
+          <label><span data-i18n="combineLayout">Layout</span><select id="combine-layout"><option value="vertical" data-i18n="vertical">Vertical</option><option value="horizontal" data-i18n="horizontal">Horizontal</option><option value="free" data-i18n="free">Free</option></select></label>
+          <label><span data-i18n="combineGap">Gap (px)</span><input id="combine-gap" type="number" min="0" max="500" value="16" /></label>
+        </div>
+        <p id="combine-size" class="combine-size" role="status"></p>
+      </div>
+      <footer class="dialog-actions"><button type="button" class="dialog-button" data-close-dialog="combine-dialog" data-i18n="cancel">Cancel</button><button id="combine-confirm" type="button" class="dialog-button primary" data-i18n="combine">Combine images</button></footer>
     </dialog>
     <dialog id="text-dialog" data-kind="Text">
       <header><div><span class="dialog-kicker">SnapZy</span><h2 id="text-dialog-title">Add text</h2></div><button class="dialog-close" type="button" data-close-dialog="text-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>

@@ -194,7 +194,11 @@ impl EditorService {
             crate::image_limits::IMAGE_LIMIT,
         )?);
         let session = Session::new(source.width, source.height);
-        Ok(Self { source, session, project_path: None })
+        Ok(Self {
+            source,
+            session,
+            project_path: None,
+        })
     }
 
     pub fn open_path(path: &Path) -> Result<Self, String> {
@@ -214,6 +218,34 @@ impl EditorService {
             source: project.frame,
             session,
             project_path: Some(path.to_path_buf()),
+        })
+    }
+
+    pub fn snapshot_project(&self, path: &Path) -> Result<(), String> {
+        self.ensure_duplication_idle()?;
+        crate::project::save(path, &self.source, &self.session.document)
+    }
+
+    pub fn combine_projects(
+        paths: &[PathBuf],
+        layout: crate::combine::Layout,
+        gap: u32,
+    ) -> Result<Self, String> {
+        if !(2..=16).contains(&paths.len()) {
+            return Err("Choose 2-16 images to combine.".into());
+        }
+        let mut sources = Vec::with_capacity(paths.len());
+        for path in paths {
+            let project = crate::project::load(path, crate::image_limits::SOURCE_LIMIT)?;
+            sources.push((project.frame, project.document));
+        }
+        let project = crate::combine::build(&sources, layout, gap)?;
+        let mut session = Session::new(project.document.crop.width, project.document.crop.height);
+        session.document = project.document;
+        Ok(Self {
+            source: project.frame,
+            session,
+            project_path: None,
         })
     }
 
@@ -686,13 +718,49 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum ServiceRequest {
-    Open { path: PathBuf },
-    OpenProject { path: PathBuf },
-    SaveProject { path: PathBuf },
-    Apply { command: EditorCommand },
-    Preview { path: PathBuf },
+    Open {
+        path: PathBuf,
+    },
+    OpenProject {
+        path: PathBuf,
+    },
+    SnapshotProject {
+        path: PathBuf,
+    },
+    CombineProjects {
+        paths: Vec<PathBuf>,
+        layout: CombineLayout,
+        gap: u32,
+    },
+    SaveProject {
+        path: PathBuf,
+    },
+    Apply {
+        command: EditorCommand,
+    },
+    Preview {
+        path: PathBuf,
+    },
     View,
     Shutdown,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum CombineLayout {
+    Vertical,
+    Horizontal,
+    Free,
+}
+
+impl From<CombineLayout> for crate::combine::Layout {
+    fn from(value: CombineLayout) -> Self {
+        match value {
+            CombineLayout::Vertical => Self::Vertical,
+            CombineLayout::Horizontal => Self::Horizontal,
+            CombineLayout::Free => Self::Free,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -747,11 +815,24 @@ pub fn run_stdio() -> Result<(), String> {
                 service = Some(opened);
                 Some(view)
             }),
-            ServiceRequest::OpenProject { path } => EditorService::open_project(&path).map(|opened| {
-                let view = opened.view();
-                service = Some(opened);
-                Some(view)
-            }),
+            ServiceRequest::OpenProject { path } => {
+                EditorService::open_project(&path).map(|opened| {
+                    let view = opened.view();
+                    service = Some(opened);
+                    Some(view)
+                })
+            }
+            ServiceRequest::SnapshotProject { path } => service
+                .as_ref()
+                .ok_or_else(|| "Open an image before combining.".into())
+                .and_then(|editor| editor.snapshot_project(&path).map(|_| Some(editor.view()))),
+            ServiceRequest::CombineProjects { paths, layout, gap } => {
+                EditorService::combine_projects(&paths, layout.into(), gap).map(|combined| {
+                    let view = combined.view();
+                    service = Some(combined);
+                    Some(view)
+                })
+            }
             ServiceRequest::SaveProject { path } => service
                 .as_mut()
                 .ok_or_else(|| "Open an image before saving a project.".into())
@@ -802,6 +883,39 @@ mod tests {
             .write_png(&mut png)
             .unwrap();
         EditorService::open_bytes(&png).unwrap()
+    }
+
+    #[test]
+    fn combine_snapshots_creates_editable_new_work_without_saving_sources() {
+        let mut first = blank_service();
+        let second = blank_service();
+        draw(
+            &mut first,
+            Tool::Line,
+            Point::new(10., 10.),
+            Point::new(50., 40.),
+        );
+        let first_before = first.view();
+        let second_before = second.view();
+        let directory =
+            std::env::temp_dir().join(format!("snapzy-combine-test-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let a = directory.join("a.snapzy");
+        let b = directory.join("b.snapzy");
+        first.snapshot_project(&a).unwrap();
+        second.snapshot_project(&b).unwrap();
+        let mut combined =
+            EditorService::combine_projects(&[a, b], crate::combine::Layout::Vertical, 16).unwrap();
+        assert_eq!((combined.view().width, combined.view().height), (96, 160));
+        assert_eq!(combined.session.document.objects.len(), 3);
+        assert!(combined.view().dirty);
+        assert!(!combined.view().can_undo);
+        assert_eq!(first.view(), first_before);
+        assert_eq!(second.view(), second_before);
+        combined
+            .apply(EditorCommand::Choose { tool: Tool::Select })
+            .unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -995,12 +1109,10 @@ mod tests {
         assert_eq!(callout_view.tool, Tool::Select);
         assert_eq!(callout_overlay.kind, SelectionKind::Text);
         assert_eq!(callout_overlay.handles.len(), 7);
-        assert!(
-            callout_overlay
-                .handles
-                .iter()
-                .any(|handle| handle.role == HandleRole::Tail)
-        );
+        assert!(callout_overlay
+            .handles
+            .iter()
+            .any(|handle| handle.role == HandleRole::Tail));
     }
 
     #[test]
@@ -1126,24 +1238,18 @@ mod tests {
             .expect("selected line must expose its controls");
         assert_eq!(overlay.kind, SelectionKind::Line);
         assert_eq!(overlay.handles.len(), 3);
-        assert!(
-            overlay
-                .handles
-                .iter()
-                .any(|handle| handle.role == HandleRole::Start)
-        );
-        assert!(
-            overlay
-                .handles
-                .iter()
-                .any(|handle| handle.role == HandleRole::End)
-        );
-        assert!(
-            overlay
-                .handles
-                .iter()
-                .any(|handle| handle.role == HandleRole::Curve)
-        );
+        assert!(overlay
+            .handles
+            .iter()
+            .any(|handle| handle.role == HandleRole::Start));
+        assert!(overlay
+            .handles
+            .iter()
+            .any(|handle| handle.role == HandleRole::End));
+        assert!(overlay
+            .handles
+            .iter()
+            .any(|handle| handle.role == HandleRole::Curve));
     }
 
     #[test]
@@ -1206,14 +1312,12 @@ mod tests {
         service.session.document.selected = Some(2000);
         let before = service.view();
 
-        assert!(
-            service
-                .apply(EditorCommand::DuplicateArea {
-                    start: Point::new(4., 4.),
-                    end: Point::new(20., 20.),
-                })
-                .is_err()
-        );
+        assert!(service
+            .apply(EditorCommand::DuplicateArea {
+                start: Point::new(4., 4.),
+                end: Point::new(20., 20.),
+            })
+            .is_err());
 
         assert_eq!(service.view(), before);
     }

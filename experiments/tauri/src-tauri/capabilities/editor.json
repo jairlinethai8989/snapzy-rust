@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "editor",
+  "description": "Image editor windows with permission to close after confirming unsaved work.",
+  "windows": ["editor-*"],
+  "permissions": ["core:default", "core:window:allow-close"]
+}

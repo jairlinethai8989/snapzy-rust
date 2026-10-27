@@ -1,6 +1,6 @@
-# SnapZy 0.15.0-alpha.6 User Guide
+# SnapZy 0.15.0-alpha.10 User Guide
 
-This guide describes the capture launcher and image editor in SnapZy Rust `0.15.0-alpha.6`. The screenshots use synthetic sample data created for this guide.
+This guide describes the capture launcher and image editor in SnapZy Rust `0.15.0-alpha.10`. The screenshots use synthetic sample data created for this guide.
 
 ## Screen overview
 
@@ -28,7 +28,7 @@ The More menu contains commands for the entire desktop, keyboard shortcuts, and 
 | No. | Control | What it does |
 | --- | --- | --- |
 | 1 | **Document tabs** | Switch between open images. Use `+` to open another image. |
-| 2 | **Top commands** | More, OCR, Help, language, Copy image, and Save PNG. |
+| 2 | **Top commands** | More, Combine images, OCR, Help, language, Copy image, and Save PNG. |
 | 3 | **Select / Crop / Duplicate area** | Select and edit objects, crop the image, or drag a region to create a movable image copy. |
 | 4 | **Pen / Highlighter / Line / Arrow** | Choose a drawing tool and drag on the canvas. |
 | 5 | **Outline / Filled shapes** | Open a menu to choose a rectangle or ellipse, then drag to draw it. |
@@ -46,6 +46,13 @@ The More menu contains commands for the entire desktop, keyboard shortcuts, and 
 3. Select an object to move or resize it. Use the tool settings to change its color, size, line style, font, background, or opacity.
 4. Use **Copy image** to copy the edited image, or **Save PNG** to export an image file.
 
+## Combine open image tabs
+
+1. Open at least two images in tabs in the same editor window.
+2. Click **Combine images** (overlapping images icon) near **More**, or choose it from **More**.
+3. Check the tabs to include, use the arrows to change their order, choose vertical, horizontal, or free placement, and set a gap of 0–500 px for automatic layouts.
+4. Click **Combine images**. SnapZy opens a new tab. The source tabs remain unchanged, and their images and objects remain editable in the combined project. Save the new work as a `.snapzy` project to continue editing later.
+
 ## Zoom and keyboard shortcuts
 
 - `Ctrl` + mouse wheel: zoom around the pointer
@@ -55,6 +62,6 @@ The More menu contains commands for the entire desktop, keyboard shortcuts, and 
 - `Ctrl` + `D`: duplicate the selected object; `Delete`: remove it
 - `Enter`: apply a crop; `Esc`: dismiss a menu or cancel the current operation
 
-## Alpha 6 limitations
+## Alpha 10 limitations
 
-The **OCR**, **Add Image**, and **Combine Images** commands remain visible but are not connected in the Tauri Editor Alpha 6. **Open Project**, **Save**, and **Save As** now use editable `.snapzy` project files. Copy image and Save PNG still export a flattened image and do not mark the editable project as saved.
+The **OCR** and **Add Image** commands remain visible but are not connected in the Tauri Editor. **Open Project**, **Save**, and **Save As** use editable `.snapzy` project files. Copy image and Save PNG export a flattened image and do not mark the editable project as saved.

@@ -15,6 +15,7 @@ import {
   commandForSession, normalizeWorkspace, removeWorkspaceTab, selectWorkspaceTab,
 } from "./editor-workspace.js";
 import { editorText, toolTextKey } from "./editor-i18n.js";
+import { combinedBounds, moveCandidate, selectedSessionIds } from "./combine-workflow.js";
 
 const icons = { X, Plus, Ellipsis, ScanText, CircleHelp, Copy, Download, MousePointer2, Crop, SquareDashedMousePointer, PenLine, Highlighter, Minus, MoveUpRight, Square, Circle, ChevronDown, Droplets, Type, MessageSquare, Sparkles, Layers3, Trash2, Undo2, Redo2, Check, Maximize, ImagePlus, FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut };
 const $ = (selector) => document.querySelector(selector);
@@ -45,6 +46,7 @@ let stopWindowCloseListener = null;
 let stopApplicationCloseListener = null;
 let closeDecisionResolve = null;
 let closingWindow = false;
+let combineCandidates = [];
 const sessionViewports = new Map();
 const recentColorKey = "snapzy-editor-recent-colors-v1";
 let recentColors = [];
@@ -75,6 +77,7 @@ function renderLanguage() {
   $("#editor-language").textContent = state.language.toUpperCase();
   document.title = `SnapZy ${packageMetadata.version} | ${t("imageEditor")}`;
   if ($("#text-dialog").open) renderTextDialogTitle();
+  if ($("#combine-dialog").open) renderCombineDialog();
   buildHelp();
   renderTabs();
 }
@@ -127,6 +130,7 @@ function renderControls() {
   $("#delete-button").disabled = !view?.can_delete || busy;
   $("#duplicate-button").disabled = !view?.selected || busy;
   $("#effects-button").disabled = !view || busy;
+  $("#combine-button").disabled = workspace.tabs.length < 2 || busy;
   $("#confirm-crop").hidden = !view?.crop_ready;
   $("#zoom-out").disabled = !view || busy || state.zoom <= ZOOM_STEPS[0];
   $("#zoom-in").disabled = !view || busy || state.zoom >= ZOOM_STEPS.at(-1);
@@ -389,7 +393,7 @@ function showMenu(owner) {
       popupItem(t("effects"), "sparkles", openEffects),
       popupItem(t("openImage"), "folder-open", () => $("#open-image").click()),
       popupItem(t("addImage"), "image-plus", () => notice(t("notAvailable"))),
-      popupItem(t("combine"), "images", () => notice(t("notAvailable"))),
+      popupItem(t("combine"), "images", () => void openCombineDialog()),
       popupItem(t("openProject"), "folder", () => void openProject()),
       popupItem(t("saveProject"), "save", () => void saveProject(false)),
       popupItem(t("saveProjectAs"), "save", () => void saveProject(true)),
@@ -616,6 +620,90 @@ async function openProject() {
     requestAnimationFrame(fitView);
   } catch (error) {
     if (!isCancelled(error)) notice(`${t("openFailed")} ${String(error)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function renderCombineDialog() {
+  const container = $("#combine-sources");
+  container.replaceChildren();
+  for (const [index, candidate] of combineCandidates.entries()) {
+    const row = document.createElement("div");
+    row.className = "combine-source";
+    row.innerHTML = '<label><input type="checkbox" /><span class="combine-source-name"></span><span class="combine-source-size"></span></label><button type="button" data-direction="-1"><i data-lucide="arrow-up"></i></button><button type="button" data-direction="1"><i data-lucide="arrow-down"></i></button>';
+    row.querySelector("input").checked = candidate.checked;
+    row.querySelector("input").addEventListener("change", (event) => { candidate.checked = event.target.checked; updateCombineSize(); });
+    row.querySelector(".combine-source-name").textContent = candidate.title;
+    row.querySelector(".combine-source-size").textContent = `${candidate.width} × ${candidate.height}`;
+    for (const button of row.querySelectorAll("button")) {
+      const direction = Number(button.dataset.direction);
+      button.disabled = index + direction < 0 || index + direction >= combineCandidates.length;
+      button.setAttribute("aria-label", t(direction < 0 ? "moveUp" : "moveDown"));
+      button.addEventListener("click", () => {
+        combineCandidates = moveCandidate(combineCandidates, candidate.session_id, direction);
+        renderCombineDialog();
+      });
+    }
+    container.append(row);
+  }
+  refreshIcons(container);
+  updateCombineSize();
+}
+
+function updateCombineSize() {
+  const layout = $("#combine-layout").value;
+  const gap = Number($("#combine-gap").value);
+  $("#combine-gap").disabled = layout === "free";
+  try {
+    const { width, height } = combinedBounds(combineCandidates, layout, gap);
+    $("#combine-size").textContent = `${t("combineSize")}: ${width} × ${height} px`;
+    $("#combine-confirm").disabled = width > 32767 || height > 32767 || width * height * 4 > 128 * 1024 * 1024;
+  } catch {
+    $("#combine-size").textContent = t("combineChooseTwo");
+    $("#combine-confirm").disabled = true;
+  }
+}
+
+async function openCombineDialog() {
+  if (busy) return;
+  if (workspace.tabs.length < 2) return notice(t("combineChooseTwo"));
+  if (!native) return notice(t("browserMode"));
+  setBusy(true);
+  clearNotice();
+  try {
+    const candidates = await invoke("editor_combine_candidates");
+    combineCandidates = candidates.map((candidate) => ({ ...candidate, checked: candidate.session_id === workspace.activeSessionId }));
+    $("#combine-layout").value = "vertical";
+    $("#combine-gap").value = "16";
+    renderCombineDialog();
+    $("#combine-dialog").showModal();
+  } catch (error) {
+    notice(`${t("commandFailed")} ${String(error)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function confirmCombine() {
+  if (busy) return;
+  const sessionIds = selectedSessionIds(combineCandidates);
+  const layout = $("#combine-layout").value;
+  const gap = Number($("#combine-gap").value);
+  try { combinedBounds(combineCandidates, layout, gap); }
+  catch { return updateCombineSize(); }
+  $("#combine-dialog").close();
+  setBusy(true);
+  clearNotice();
+  try {
+    const result = await invoke("editor_combine", { sessionIds, layout, gap });
+    await reloadWorkspace(result.session_id);
+    loadedSessionId = result.session_id;
+    syncView(result.view);
+    await refreshPreview();
+    requestAnimationFrame(fitView);
+  } catch (error) {
+    notice(`${t("commandFailed")} ${String(error)}`);
   } finally {
     setBusy(false);
   }
@@ -1110,6 +1198,10 @@ $("#editor-language").addEventListener("click", () => {
 $("#help-button").addEventListener("click", () => $("#help-dialog").showModal());
 $("#ocr-button").addEventListener("click", () => notice(t("notAvailable")));
 $("#effects-button").addEventListener("click", openEffects);
+$("#combine-button").addEventListener("click", () => void openCombineDialog());
+$("#combine-layout").addEventListener("change", updateCombineSize);
+$("#combine-gap").addEventListener("input", updateCombineSize);
+$("#combine-confirm").addEventListener("click", () => void confirmCombine());
 $("#effects-apply").addEventListener("click", () => void applyEffects());
 $("#text-apply").addEventListener("click", () => void applyTextEntry());
 $("#text-dialog").addEventListener("close", () => { textPoint = null; });

@@ -7,12 +7,18 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-const engine = path.join(root, "dist/SnapZy-0.15.0-alpha.8-win-x64/engine/snapzy-engine.exe");
+const engine = process.env.SNAPZY_ENGINE_PATH || path.join(root, "dist/SnapZy-0.15.0-alpha.10-win-x64/engine/snapzy-engine.exe");
 const input = path.join(root, "tests/fixtures/ocr/english.png");
 const output = path.join(tmpdir(), "snapzy-tauri-editor-smoke.png");
 const project = path.join(tmpdir(), "snapzy-tauri-editor-smoke.snapzy");
+const combineA = path.join(tmpdir(), "snapzy-tauri-combine-a.snapzy");
+const combineB = path.join(tmpdir(), "snapzy-tauri-combine-b.snapzy");
+const combinedProject = path.join(tmpdir(), "snapzy-tauri-combined.snapzy");
 await rm(output, { force: true });
 await rm(project, { force: true });
+await rm(combineA, { force: true });
+await rm(combineB, { force: true });
+await rm(combinedProject, { force: true });
 
 const child = spawn(engine, ["--editor-service"], {
   cwd: path.dirname(engine),
@@ -82,14 +88,42 @@ try {
   assert.equal(reopened.view.width, duplicatedArea.view.width);
   assert.equal(reopened.view.height, duplicatedArea.view.height);
 
+  const firstSnapshot = await send({ type: "snapshot_project", path: combineA });
+  assert.equal(firstSnapshot.ok, true);
+  assert.equal(firstSnapshot.view.dirty, false);
+  const secondSource = await send({ type: "open", path: input });
+  assert.equal(secondSource.ok, true);
+  const secondSnapshot = await send({ type: "snapshot_project", path: combineB });
+  assert.equal(secondSnapshot.ok, true);
+  assert.equal(secondSnapshot.view.dirty, true);
+  const combined = await send({ type: "combine_projects", paths: [combineA, combineB], layout: "horizontal", gap: 12 });
+  assert.equal(combined.ok, true);
+  assert.equal(combined.view.width, reopened.view.width + secondSource.view.width + 12);
+  assert.equal(combined.view.dirty, true);
+  const combinedSaved = await send({ type: "save_project", path: combinedProject });
+  assert.equal(combinedSaved.ok, true);
+  assert.equal(combinedSaved.view.dirty, false);
+  const combinedReopened = await send({ type: "open_project", path: combinedProject });
+  assert.equal(combinedReopened.ok, true);
+  assert.equal(combinedReopened.view.width, combined.view.width);
+  assert.equal(combinedReopened.view.height, combined.view.height);
+  await send({ type: "apply", command: { type: "choose", tool: "Line" } });
+  await send({ type: "apply", command: { type: "press", point: { x: 5, y: 5 }, tolerance: 5 } });
+  const editedAgain = await send({ type: "apply", command: { type: "release", point: { x: 32, y: 18 } } });
+  assert.equal(editedAgain.ok, true);
+  assert.equal(editedAgain.view.can_undo, true);
+
   const shutdown = await send({ type: "shutdown" });
   assert.equal(shutdown.ok, true);
   child.stdin.end();
   const code = await new Promise((resolve) => child.once("exit", resolve));
   assert.equal(code, 0);
-  console.log("Passed: packaged Rust editor engine opens, draws, adds text/callout, duplicates objects/areas, renders PNG and shuts down.");
+  console.log("Passed: Rust editor engine opens, edits, snapshots, combines editable projects, renders PNG and shuts down.");
 } finally {
   if (!child.killed) child.kill();
   await rm(output, { force: true });
   await rm(project, { force: true });
+  await rm(combineA, { force: true });
+  await rm(combineB, { force: true });
+  await rm(combinedProject, { force: true });
 }
