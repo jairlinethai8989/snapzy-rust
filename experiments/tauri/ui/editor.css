@@ -157,6 +157,13 @@ dialog h2 { margin: 0; font-size: 15px; font-weight: 650; }
 .dialog-button.primary:hover { background: #075ec6; }
 .effects-dialog { width: min(560px, calc(100vw - 28px)); }
 .combine-dialog { width: min(570px, calc(100vw - 28px)); }
+.canvas-dialog { width: min(440px, calc(100vw - 28px)); }
+.canvas-body { padding: 14px 16px 4px; }
+.canvas-body > p { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.canvas-options { display: flex; gap: 10px; }
+.canvas-options label { display: grid; flex: 1; gap: 4px; color: var(--muted); font-size: 11px; }
+.canvas-options input { width: 100%; height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: #fff; }
+.canvas-body .canvas-note { margin: 12px 0 3px; color: #738193; font-size: 10px; }
 .combine-body { padding: 14px 16px 4px; }
 .combine-body > p { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
 .combine-sources { display: grid; gap: 5px; max-height: min(280px, 38vh); overflow: auto; }

@@ -152,6 +152,18 @@
       </div>
       <footer class="dialog-actions"><button type="button" class="dialog-button" data-close-dialog="combine-dialog" data-i18n="cancel">Cancel</button><button id="combine-confirm" type="button" class="dialog-button primary" data-i18n="combine">Combine images</button></footer>
     </dialog>
+    <dialog id="canvas-dialog" class="canvas-dialog">
+      <header><div><span class="dialog-kicker">SnapZy</span><h2 data-i18n="canvasTitle">Workspace size</h2></div><button class="dialog-close" type="button" data-close-dialog="canvas-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>
+      <div class="canvas-body">
+        <p data-i18n="canvasHintDialog">Set the editable workspace size in pixels. Existing pixels and objects stay unchanged.</p>
+        <div class="canvas-options">
+          <label><span data-i18n="canvasWidth">Width (px)</span><input id="canvas-width" type="number" min="1" max="32767" step="1" /></label>
+          <label><span data-i18n="canvasHeight">Height (px)</span><input id="canvas-height" type="number" min="1" max="32767" step="1" /></label>
+        </div>
+        <p class="canvas-note" data-i18n="canvasShrinkHint">Reducing the workspace clips content outside the new boundary.</p>
+      </div>
+      <footer class="dialog-actions"><button type="button" class="dialog-button" data-close-dialog="canvas-dialog" data-i18n="cancel">Cancel</button><button id="canvas-apply" type="button" class="dialog-button primary" data-i18n="applyCanvas">Apply size</button></footer>
+    </dialog>
     <dialog id="text-dialog" data-kind="Text">
       <header><div><span class="dialog-kicker">SnapZy</span><h2 id="text-dialog-title">Add text</h2></div><button class="dialog-close" type="button" data-close-dialog="text-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>
       <div class="text-entry-body">

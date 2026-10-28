@@ -231,6 +231,25 @@ test("zoom buttons follow compact presets and clamp manual zoom to 25-400 percen
   assert.equal(steppedZoom(0.76, 1), 1);
 });
 
+test("workspace resize command carries bounded pixel dimensions", () => {
+  assert.deepEqual(backendCommand("expand_canvas", { width: 1280, height: 720 }), {
+    type: "expand_canvas",
+    width: 1280,
+    height: 720,
+  });
+  assert.throws(() => backendCommand("expand_canvas", { width: 0, height: 720 }));
+  assert.throws(() => backendCommand("expand_canvas", { width: 32768, height: 720 }));
+});
+
+test("workspace resize accepts both expansion and reduction", () => {
+  assert.deepEqual(backendCommand("resize_canvas", { width: 640, height: 480 }), {
+    type: "resize_canvas",
+    width: 640,
+    height: 480,
+  });
+  assert.throws(() => backendCommand("resize_canvas", { width: 0, height: 480 }));
+});
+
 test("backend commands carry typed Rust tool names and validated pointer data", () => {
   assert.deepEqual(backendCommand("choose", { tool: "Arrow" }), { type: "choose", tool: "Arrow" });
   assert.deepEqual(backendCommand("press", { point: { x: 12.25, y: 19.5 }, tolerance: 4 }), {

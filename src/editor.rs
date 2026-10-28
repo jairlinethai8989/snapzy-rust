@@ -648,6 +648,25 @@ impl Document {
         self.crop = crop;
         Ok(true)
     }
+    pub fn resize_canvas(&mut self, width: u32, height: u32) -> Result<bool, String> {
+        if width == 0 || height == 0 {
+            return Err("Canvas dimensions must be positive.".into());
+        }
+        if crate::frame::Frame::byte_len(width, height)? > crate::image_limits::IMAGE_LIMIT {
+            return Err("Canvas exceeds the 128 MiB pixel limit.".into());
+        }
+        let crop = Rect::new(self.crop.x, self.crop.y, width, height)?;
+        if crop.right() > 32767 || crop.bottom() > 32767 {
+            return Err("Canvas is outside the supported coordinates.".into());
+        }
+        if crop == self.crop {
+            return Ok(false);
+        }
+        self.begin_edit();
+        self.crop = crop;
+        self.source_clip = self.source_clip.and_then(|r| r.intersection(crop));
+        Ok(true)
+    }
     pub fn image_sources(&self) -> Vec<Arc<crate::frame::Frame>> {
         let mut seen = std::collections::HashSet::new();
         self.objects

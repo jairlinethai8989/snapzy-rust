@@ -71,6 +71,22 @@ try {
     assert.equal(await page.locator("#editor-popup").isVisible(), true);
     await page.getByRole("menuitem", { name: "100%", exact: true }).click();
     assert.equal(await page.locator("#zoom-value").textContent(), "100%");
+    await page.locator("#more-button").click();
+    assert.equal(await page.getByRole("menuitem", { name: "พื้นที่ทำงาน", exact: true }).isVisible(), true);
+    await page.getByRole("menuitem", { name: "พื้นที่ทำงาน", exact: true }).click();
+    assert.equal(await page.locator("#canvas-dialog").isVisible(), true);
+    const [canvasWidth, canvasHeight] = await page.locator("#document-size").textContent().then((text) => text.match(/\d+/g).map(Number));
+    await page.locator("#canvas-width").fill(String(canvasWidth + 32));
+    await page.locator("#canvas-height").fill(String(canvasHeight + 24));
+    await page.locator("#canvas-apply").click();
+    assert.match(await page.locator("#document-size").textContent(), new RegExp(`${canvasWidth + 32} × ${canvasHeight + 24}`));
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.locator("#more-button").click();
+    await page.getByRole("menuitem", { name: "พื้นที่ทำงาน", exact: true }).click();
+    await page.locator("#canvas-width").fill(String(canvasWidth));
+    await page.locator("#canvas-height").fill(String(canvasHeight));
+    await page.locator("#canvas-apply").click();
+    assert.match(await page.locator("#document-size").textContent(), new RegExp(`${canvasWidth} × ${canvasHeight}`));
     if (await page.locator("#effects-button").isVisible()) {
       await page.locator("#effects-button").click();
     } else {

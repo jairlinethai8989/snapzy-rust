@@ -37,6 +37,14 @@ pub enum EditorCommand {
     SetTextBackground {
         background: Background,
     },
+    ExpandCanvas {
+        width: u32,
+        height: u32,
+    },
+    ResizeCanvas {
+        width: u32,
+        height: u32,
+    },
     SetEffects {
         effects: Effects,
     },
@@ -482,6 +490,14 @@ impl EditorService {
             EditorCommand::SetTextBackground { background } => {
                 self.session.set_background(background);
             }
+            EditorCommand::ExpandCanvas { width, height } => {
+                self.session.cancel();
+                self.session.document.expand_canvas(width, height)?;
+            }
+            EditorCommand::ResizeCanvas { width, height } => {
+                self.session.cancel();
+                self.session.document.resize_canvas(width, height)?;
+            }
             EditorCommand::SetEffects { effects } => {
                 self.session.set_effects(effects)?;
             }
@@ -916,6 +932,56 @@ mod tests {
             .apply(EditorCommand::Choose { tool: Tool::Select })
             .unwrap();
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn expand_canvas_is_one_undoable_edit_and_keeps_objects() {
+        let mut service = blank_service();
+        draw(
+            &mut service,
+            Tool::Line,
+            Point::new(10., 10.),
+            Point::new(50., 40.),
+        );
+        let object_count = service.session.document.objects.len();
+        let view = service
+            .apply(EditorCommand::ExpandCanvas {
+                width: 160,
+                height: 120,
+            })
+            .unwrap();
+        assert_eq!((view.width, view.height), (160, 120));
+        assert!(view.can_undo);
+        assert_eq!(service.session.document.objects.len(), object_count);
+
+        let undone = service.apply(EditorCommand::Undo).unwrap();
+        assert_eq!((undone.width, undone.height), (96, 72));
+        assert_eq!(service.session.document.objects.len(), object_count);
+    }
+
+    #[test]
+    fn resize_canvas_can_reduce_and_undo_restores_the_previous_workspace() {
+        let mut service = blank_service();
+        draw(
+            &mut service,
+            Tool::Line,
+            Point::new(10., 10.),
+            Point::new(50., 40.),
+        );
+        let object_count = service.session.document.objects.len();
+        let view = service
+            .apply(EditorCommand::ResizeCanvas {
+                width: 64,
+                height: 48,
+            })
+            .unwrap();
+        assert_eq!((view.width, view.height), (64, 48));
+        assert!(view.can_undo);
+        assert_eq!(service.session.document.objects.len(), object_count);
+
+        let undone = service.apply(EditorCommand::Undo).unwrap();
+        assert_eq!((undone.width, undone.height), (96, 72));
+        assert_eq!(service.session.document.objects.len(), object_count);
     }
 
     #[test]

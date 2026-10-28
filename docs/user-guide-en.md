@@ -28,7 +28,7 @@ The More menu contains commands for the entire desktop, keyboard shortcuts, and 
 | No. | Control | What it does |
 | --- | --- | --- |
 | 1 | **Document tabs** | Switch between open images. Use `+` to open another image. |
-| 2 | **Top commands** | More, Combine images, OCR, Help, language, Copy image, and Save PNG. |
+| 2 | **Top commands** | More, Workspace size, Combine images, OCR, Help, language, Copy image, and Save PNG. |
 | 3 | **Select / Crop / Duplicate area** | Select and edit objects, crop the image, or drag a region to create a movable image copy. |
 | 4 | **Pen / Highlighter / Line / Arrow** | Choose a drawing tool and drag on the canvas. |
 | 5 | **Outline / Filled shapes** | Open a menu to choose a rectangle or ellipse, then drag to draw it. |
@@ -61,6 +61,13 @@ The More menu contains commands for the entire desktop, keyboard shortcuts, and 
 - `Ctrl` + `Z`: undo; `Ctrl` + `Shift` + `Z` or `Ctrl` + `Y`: redo
 - `Ctrl` + `D`: duplicate the selected object; `Delete`: remove it
 - `Enter`: apply a crop; `Esc`: dismiss a menu or cancel the current operation
+
+## Resize the workspace
+
+1. Open **More** and choose **Workspace**.
+2. Enter the new width and height in pixels. The canvas expands to the right and bottom, or clips content outside the new boundary when reduced.
+3. Click **Apply size**. The change is one Undo/Redo step and is included in the project save state.
+4. When reducing either dimension, confirm the warning before applying. Use **Undo** to restore the previous workspace if needed.
 
 ## Alpha 10 limitations
 

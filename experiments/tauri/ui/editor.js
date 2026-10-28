@@ -390,6 +390,7 @@ function showMenu(owner) {
     }
   } else {
     popup.append(
+      popupItem(t("canvasMenu"), "maximize", openCanvasDialog),
       popupItem(t("effects"), "sparkles", openEffects),
       popupItem(t("openImage"), "folder-open", () => $("#open-image").click()),
       popupItem(t("addImage"), "image-plus", () => notice(t("notAvailable"))),
@@ -404,6 +405,31 @@ function showMenu(owner) {
   refreshIcons(popup);
   placeFloating(popup, owner);
   popup.querySelector("button")?.focus();
+}
+
+function openCanvasDialog() {
+  if (!state.view || busy) return;
+  $("#canvas-width").value = state.view.width;
+  $("#canvas-height").value = state.view.height;
+  $("#canvas-dialog").showModal();
+  requestAnimationFrame(() => $("#canvas-width").focus());
+}
+
+async function applyCanvasSize() {
+  if (!state.view || busy) return;
+  const width = Number($("#canvas-width").value);
+  const height = Number($("#canvas-height").value);
+  try {
+    const command = backendCommand("resize_canvas", { width, height });
+    if (width < state.view.width || height < state.view.height) {
+      if (!window.confirm(t("canvasShrinkConfirm"))) return;
+    }
+    $("#canvas-dialog").close();
+    await applyCommand(command);
+    requestAnimationFrame(fitView);
+  } catch (error) {
+    notice(String(error));
+  }
 }
 
 async function applyCommand(command, refresh = true, allowWhileBusy = false) {
@@ -444,6 +470,10 @@ function mockApply(command) {
     textBackground: { enabled: command.background.enabled, color: rgbToHex(command.background.rgb) },
   };
   if (command.type === "set_effects" && state.view) state = { ...state, view: { ...state.view, effects: command.effects, can_undo: true } };
+  if (["expand_canvas", "resize_canvas"].includes(command.type) && state.view) state = {
+    ...state,
+    view: { ...state.view, width: command.width, height: command.height, can_undo: true, dirty: true },
+  };
   if (command.type === "add_text") mockObjects.push({
     tool: command.callout ? "Callout" : "Text",
     points: [command.point],
@@ -1202,6 +1232,7 @@ $("#combine-button").addEventListener("click", () => void openCombineDialog());
 $("#combine-layout").addEventListener("change", updateCombineSize);
 $("#combine-gap").addEventListener("input", updateCombineSize);
 $("#combine-confirm").addEventListener("click", () => void confirmCombine());
+$("#canvas-apply").addEventListener("click", () => void applyCanvasSize());
 $("#effects-apply").addEventListener("click", () => void applyEffects());
 $("#text-apply").addEventListener("click", () => void applyTextEntry());
 $("#text-dialog").addEventListener("close", () => { textPoint = null; });

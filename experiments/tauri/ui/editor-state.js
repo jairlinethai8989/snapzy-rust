@@ -306,6 +306,14 @@ export function backendCommand(type, payload = {}) {
     }
     return { type, background: { enabled: background.enabled, rgb: [...background.rgb] } };
   }
+  if (type === "expand_canvas" || type === "resize_canvas") {
+    const width = payload.width;
+    const height = payload.height;
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 32767 || height > 32767) {
+      throw new Error("Invalid canvas dimensions.");
+    }
+    return { type, width, height };
+  }
   if (type === "set_effects") {
     const effects = normalizeEffects(payload.effects, null);
     if (!effects) throw new Error("Invalid effect settings.");
