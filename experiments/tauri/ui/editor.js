@@ -45,6 +45,7 @@ let stopWorkspaceListener = null;
 let stopWindowCloseListener = null;
 let stopApplicationCloseListener = null;
 let closeDecisionResolve = null;
+let closeScopeResolve = null;
 let closingWindow = false;
 let combineCandidates = [];
 const sessionViewports = new Map();
@@ -398,6 +399,7 @@ function showMenu(owner) {
       popupItem(t("openProject"), "folder", () => void openProject()),
       popupItem(t("saveProject"), "save", () => void saveProject(false)),
       popupItem(t("saveProjectAs"), "save", () => void saveProject(true)),
+      popupItem(t("closeAllTabs"), "x", () => void closeEditorWindow()),
     );
   }
   menuOwner = owner;
@@ -555,7 +557,7 @@ async function activateSession(sessionId) {
 }
 
 async function closeSession(sessionId) {
-  if (!native || busy) return;
+  if (!native || busy || closingWindow || closeDecisionResolve) return;
   if (sessionId !== workspace.activeSessionId) {
     await activateSession(sessionId);
     if (workspace.activeSessionId !== sessionId) return;
@@ -596,8 +598,11 @@ async function closeSession(sessionId) {
   }
 }
 
-function askCloseDecision() {
+function askCloseDecision(all = false) {
   const dialog = $("#close-dialog");
+  dialog.querySelector("p").textContent = t(all ? "saveAllBeforeClose" : "saveBeforeClose");
+  $("#close-save").textContent = t(all ? "saveAll" : "save");
+  $("#close-discard").textContent = t(all ? "discardAll" : "discard");
   return new Promise((resolve) => {
     closeDecisionResolve = resolve;
     dialog.showModal();
@@ -740,22 +745,29 @@ async function confirmCombine() {
 }
 
 async function closeEditorWindow(application = false) {
-  if (!native || busy || closingWindow) return;
+  if (!native || busy || closingWindow || closeDecisionResolve || closeScopeResolve) return;
   closingWindow = true;
   try {
     const ids = workspace.tabs.map((tab) => tab.sessionId);
+    const original = workspace.activeSessionId;
+    const unsaved = [];
     for (const sessionId of ids) {
-      if (workspace.activeSessionId !== sessionId) {
-        const view = await invoke("editor_activate", { sessionId });
-        workspace = selectWorkspaceTab(workspace, sessionId);
-        loadedSessionId = sessionId;
-        syncView(view);
-        await refreshPreview();
-      }
-      if (state.view?.dirty === true) {
-        const decision = await askCloseDecision();
-        if (decision === "cancel") return;
-        if (decision === "save" && !(await saveProject(false))) return;
+      const view = await invoke("editor_activate", { sessionId });
+      if (view.dirty === true) unsaved.push(sessionId);
+    }
+    if (original) await invoke("editor_activate", { sessionId: original });
+    if (unsaved.length) {
+      const decision = await askCloseDecision(true);
+      if (decision === "cancel") return;
+      if (decision === "save") {
+        for (const sessionId of unsaved) {
+          const view = await invoke("editor_activate", { sessionId });
+          workspace = selectWorkspaceTab(workspace, sessionId);
+          loadedSessionId = sessionId;
+          syncView(view);
+          try { await refreshPreview(); } catch (error) { notice(String(error)); }
+          if (!(await saveProject(false))) return;
+        }
       }
     }
     await invoke("editor_close_window", { application });
@@ -765,6 +777,24 @@ async function closeEditorWindow(application = false) {
   } finally {
     closingWindow = false;
   }
+}
+
+async function requestWindowClose() {
+  if (!native || busy || closingWindow || closeDecisionResolve || closeScopeResolve) return;
+  const decision = await new Promise((resolve) => {
+    closeScopeResolve = resolve;
+    $("#close-scope-dialog").showModal();
+    requestAnimationFrame(() => $("#scope-cancel").focus());
+  });
+  if (decision === "current" && workspace.activeSessionId) await closeSession(workspace.activeSessionId);
+  if (decision === "all") await closeEditorWindow();
+}
+
+function finishCloseScope(value) {
+  const resolve = closeScopeResolve;
+  closeScopeResolve = null;
+  $("#close-scope-dialog").close();
+  resolve?.(value);
 }
 
 async function bootstrapWorkspace() {
@@ -1243,6 +1273,10 @@ $("#close-save").addEventListener("click", () => finishCloseDecision("save"));
 $("#close-discard").addEventListener("click", () => finishCloseDecision("discard"));
 $("#close-cancel").addEventListener("click", () => finishCloseDecision("cancel"));
 $("#close-dialog").addEventListener("cancel", (event) => { event.preventDefault(); finishCloseDecision("cancel"); });
+$("#scope-current").addEventListener("click", () => finishCloseScope("current"));
+$("#scope-all").addEventListener("click", () => finishCloseScope("all"));
+$("#scope-cancel").addEventListener("click", () => finishCloseScope("cancel"));
+$("#close-scope-dialog").addEventListener("cancel", (event) => { event.preventDefault(); finishCloseScope("cancel"); });
 $("#fit-view").addEventListener("click", fitView);
 $("#zoom-out").addEventListener("click", () => setZoomAtCenter(steppedZoom(state.zoom, -1)));
 $("#zoom-in").addEventListener("click", () => setZoomAtCenter(steppedZoom(state.zoom, 1)));
@@ -1368,7 +1402,9 @@ document.addEventListener("keydown", (event) => {
     if (menuOwner) closeMenu(true);
     else if (document.querySelector("dialog[open]")) {
       const dialog = document.querySelector("dialog[open]");
-      if (dialog.id === "close-dialog") finishCloseDecision("cancel"); else dialog.close();
+      if (dialog.id === "close-dialog") finishCloseDecision("cancel");
+      else if (dialog.id === "close-scope-dialog") finishCloseScope("cancel");
+      else dialog.close();
     } else { pointer = null; draft = null; void applyCommand(backendCommand("cancel"), false); renderCanvas(); }
   }
   if (event.key === "Delete") void applyCommand(backendCommand("delete"));
@@ -1431,7 +1467,7 @@ if (native) {
         );
         stopWindowCloseListener = await window.__TAURI__.event.listen(
           "editor-window-close-requested",
-          () => void closeEditorWindow(),
+          () => void requestWindowClose(),
         );
         stopApplicationCloseListener = await window.__TAURI__.event.listen(
           "application-close-requested",

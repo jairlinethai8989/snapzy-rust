@@ -138,6 +138,32 @@ impl Resize {
             if !dx.is_finite() || !dy.is_finite() {
                 return (a, b);
             }
+            // Editable image groups share one scale with all owned annotations.
+            if matches!(self.original.content, Content::Group { .. }) {
+                let width = b.x - a.x;
+                let height = b.y - a.y;
+                let ratio = match self.handle {
+                    Handle::Left => (width - dx) / width,
+                    Handle::Right => (width + dx) / width,
+                    Handle::Top => (height - dy) / height,
+                    Handle::Bottom => (height + dy) / height,
+                    _ => 0.,
+                };
+                if matches!(
+                    self.handle,
+                    Handle::Left | Handle::Right | Handle::Top | Handle::Bottom
+                ) {
+                    let ratio = ratio.clamp(1. / width.min(height), 32767. / width.max(height));
+                    let (w, h) = (width * ratio, height * ratio);
+                    let origin = match self.handle {
+                        Handle::Left => Point::new(b.x - w, (a.y + b.y - h) / 2.),
+                        Handle::Right => Point::new(a.x, (a.y + b.y - h) / 2.),
+                        Handle::Top => Point::new((a.x + b.x - w) / 2., b.y - h),
+                        _ => Point::new((a.x + b.x - w) / 2., a.y),
+                    };
+                    return (origin, Point::new(origin.x + w, origin.y + h));
+                }
+            }
             if self.handle == Handle::Left {
                 return (Point::new((a.x + dx).min(b.x - 1.), a.y), b);
             }

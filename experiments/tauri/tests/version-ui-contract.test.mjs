@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const expectedVersion = "0.15.0-alpha.10";
+const expectedVersion = "0.15.0-alpha.12";
 const versionPattern = new RegExp(expectedVersion.replaceAll(".", "\\."));
 const root = new URL("..", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");

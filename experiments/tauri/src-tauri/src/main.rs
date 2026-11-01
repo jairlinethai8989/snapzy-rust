@@ -947,9 +947,7 @@ fn editor_close_window(
             .map(|state| state.sessions.len() == 0)
             .unwrap_or(false);
         if no_sessions {
-            if let Some(main) = window.app_handle().get_webview_window("main") {
-                let _ = main.close();
-            }
+            request_application_exit(window.app_handle());
         }
     }
     Ok(())
@@ -1326,9 +1324,108 @@ fn shutdown(engine: &Engine) -> Result<bool, String> {
     engine.exited()
 }
 
+fn show_launcher(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn request_application_exit(app: &tauri::AppHandle) {
+    let engine = Arc::clone(app.state::<Arc<Engine>>().inner());
+    let hosts = engine
+        .editors
+        .lock()
+        .map(|state| state.workspace.hosts())
+        .unwrap_or_default();
+    if !hosts.is_empty() {
+        for label in hosts {
+            if let Some(window) = app.get_webview_window(&label) {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.emit("application-close-requested", ());
+            }
+        }
+        return;
+    }
+    if engine.closing.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let copy = Arc::clone(&engine);
+        let result = tauri::async_runtime::spawn_blocking(move || shutdown(&copy)).await;
+        if matches!(result, Ok(Ok(true))) {
+            app.exit(0);
+        } else {
+            engine.closing.store(false, Ordering::Release);
+            show_launcher(&app);
+        }
+    });
+}
+
+fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    let show = MenuItem::with_id(
+        app,
+        "tray-show",
+        "Open SnapZy / เปิด SnapZy",
+        true,
+        None::<&str>,
+    )?;
+    let hide = MenuItem::with_id(
+        app,
+        "tray-hide",
+        "Minimize to tray / พักใน Tray",
+        true,
+        None::<&str>,
+    )?;
+    let exit = MenuItem::with_id(app, "tray-exit", "Exit / ออกจากโปรแกรม", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &hide, &exit])?;
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .ok_or_else(|| tauri::Error::AssetNotFound("tray icon".into()))?;
+    TrayIconBuilder::with_id("snapzy-tray")
+        .icon(icon)
+        .tooltip("SnapZy — running / กำลังทำงาน")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "tray-show" => show_launcher(app),
+            "tray-hide" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
+            "tray-exit" => request_application_exit(app),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                }
+            ) {
+                show_launcher(tray.app_handle());
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(Arc::new(Engine::default()))
+        .setup(|app| {
+            setup_tray(app.handle())?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             desktop_action,
             editor_window_mode,
@@ -1363,35 +1460,8 @@ fn main() {
                     }
                     return;
                 }
-                let editor_hosts = engine
-                    .editors
-                    .lock()
-                    .map(|state| state.workspace.hosts())
-                    .unwrap_or_default();
-                if !editor_hosts.is_empty() {
-                    api.prevent_close();
-                    for label in editor_hosts {
-                        let _ = window.emit_to(&label, "application-close-requested", ());
-                    }
-                    return;
-                }
                 api.prevent_close();
-                if engine.closing.swap(true, Ordering::AcqRel) {
-                    return;
-                }
-                let window = window.clone();
-                tauri::async_runtime::spawn(async move {
-                    let copy = Arc::clone(&engine);
-                    let result =
-                        tauri::async_runtime::spawn_blocking(move || shutdown(&copy)).await;
-                    if matches!(result, Ok(Ok(true))) {
-                        window.app_handle().exit(0);
-                    } else {
-                        engine.closing.store(false, Ordering::Release);
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                });
+                let _ = window.hide();
             }
         })
         .run(tauri::generate_context!())

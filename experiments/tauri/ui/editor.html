@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
-    <title>SnapZy 0.15.0-alpha.10 | Image editor</title>
+    <title>SnapZy 0.15.0-alpha.12 | Image editor</title>
   </head>
   <body class="editor-page">
     <main class="editor-app" aria-label="SnapZy image editor">
@@ -129,6 +129,15 @@
     <dialog id="help-dialog">
       <header><div><span class="dialog-kicker">SnapZy</span><h2 data-i18n="helpTitle">Editor tools</h2></div><button class="dialog-close" type="button" data-close-dialog="help-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>
       <div id="help-grid" class="help-grid"></div>
+    </dialog>
+    <dialog id="close-scope-dialog" class="close-dialog">
+      <header><div><span class="dialog-kicker">SnapZy</span><h2 data-i18n="closeScopeTitle">Close image editor</h2></div></header>
+      <p data-i18n="closeScopeHint">Close the current tab or all tabs in this window?</p>
+      <footer class="dialog-actions">
+        <button id="scope-cancel" type="button" class="dialog-button" data-i18n="cancel">Cancel</button>
+        <button id="scope-current" type="button" class="dialog-button" data-i18n="closeCurrent">Close</button>
+        <button id="scope-all" type="button" class="dialog-button primary" data-i18n="closeAllTabs">Close all tabs</button>
+      </footer>
     </dialog>
     <dialog id="close-dialog" class="close-dialog">
       <header><div><span class="dialog-kicker">SnapZy</span><h2 data-i18n="closeProjectTitle">Unsaved changes</h2></div><button class="dialog-close" type="button" data-close-dialog="close-dialog" data-tooltip="close"><i data-lucide="x"></i></button></header>

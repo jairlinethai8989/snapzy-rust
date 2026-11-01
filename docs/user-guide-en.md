@@ -1,4 +1,4 @@
-# SnapZy 0.15.0-alpha.10 User Guide
+# SnapZy 0.15.0-alpha.12 User Guide
 
 This guide describes the capture launcher and image editor in SnapZy Rust `0.15.0-alpha.10`. The screenshots use synthetic sample data created for this guide.
 
@@ -69,6 +69,14 @@ The More menu contains commands for the entire desktop, keyboard shortcuts, and 
 3. Click **Apply size**. The change is one Undo/Redo step and is included in the project save state.
 4. When reducing either dimension, confirm the warning before applying. Use **Undo** to restore the previous workspace if needed.
 
-## Alpha 10 limitations
+To close every tab in the current editor window, choose **More → Close all tabs**.
+Unsaved projects are handled together with **Save all**, **Discard all**, or **Cancel**. Cancel keeps all tabs open.
+The Editor window X asks whether to close the active tab, close all tabs, or cancel.
+Combined image groups preserve their proportions when resized, including with side handles.
+
+Closing the capture launcher with X keeps SnapZy running in the System Tray.
+Click the tray icon to reopen it, or right-click and choose **Exit** to quit.
+
+## Alpha 12 limitations
 
 The **OCR** and **Add Image** commands remain visible but are not connected in the Tauri Editor. **Open Project**, **Save**, and **Save As** use editable `.snapzy` project files. Copy image and Save PNG export a flattened image and do not mark the editable project as saved.

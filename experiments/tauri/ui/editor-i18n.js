@@ -1,5 +1,7 @@
 const strings = {
   en: {
+    closeScopeTitle: "Close image editor", closeScopeHint: "Close the current tab or all tabs in this window?", closeCurrent: "Close", saveAll: "Save all", discardAll: "Discard all", saveAllBeforeClose: "There are unsaved projects. Save all, discard all changes, or cancel?",
+    closeAllTabs: "Close all tabs",
     untitled: "Untitled", imageEditor: "Image editor", noImage: "No image open", ready: "Ready", working: "Working…",
     select: "Select", crop: "Crop", duplicateArea: "Duplicate area", duplicateAreaHelp: "Duplicate area: drag a rectangle to create a movable image copy.", duplicateObject: "Duplicate object", duplicateObjectHelp: "Duplicate object: press Ctrl+D to copy the selected object without changing the source.", pen: "Pen", highlighter: "Highlighter", line: "Line", arrow: "Arrow",
     rectangle: "Rectangle", ellipse: "Ellipse", filledRectangle: "Filled rectangle", filledEllipse: "Filled ellipse",
@@ -21,6 +23,8 @@ const strings = {
     copyFailed: "Could not copy the image.", saveFailed: "Could not save the PNG.", clipboardUnavailable: "Image clipboard access is unavailable.",
   },
   th: {
+    closeScopeTitle: "ปิดหน้าแก้ไขภาพ", closeScopeHint: "ต้องการปิดแท็บปัจจุบัน หรือปิดทุกแท็บในหน้าต่างนี้?", closeCurrent: "ปิด", saveAll: "บันทึกทั้งหมด", discardAll: "ไม่บันทึกทั้งหมด", saveAllBeforeClose: "มีงานที่ยังไม่บันทึก ต้องการบันทึกทั้งหมด ไม่บันทึกทั้งหมด หรือยกเลิก?",
+    closeAllTabs: "ปิดทุกแท็บ",
     untitled: "งานใหม่", imageEditor: "แก้ไขภาพ", noImage: "ยังไม่ได้เปิดภาพ", ready: "พร้อมใช้งาน", working: "กำลังทำงาน…",
     select: "เลือกวัตถุ", crop: "ครอบตัด", duplicateArea: "สำเนาพื้นที่", duplicateAreaHelp: "สำเนาพื้นที่: ลากกรอบเพื่อสร้างวัตถุภาพใหม่ที่ย้ายได้", duplicateObject: "สำเนาวัตถุ", duplicateObjectHelp: "สำเนาวัตถุ: กด Ctrl+D เพื่อคัดลอกวัตถุที่เลือกโดยต้นฉบับคงเดิม", pen: "ปากกา", highlighter: "ไฮไลต์", line: "เส้นตรง", arrow: "ลูกศร",
     rectangle: "สี่เหลี่ยมโปร่ง", ellipse: "วงรีโปร่ง", filledRectangle: "สี่เหลี่ยมทึบ", filledEllipse: "วงรีทึบ",

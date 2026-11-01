@@ -521,6 +521,30 @@ mod tests {
     }
 
     #[test]
+    fn combined_image_side_drag_remains_renderable_and_can_overlap_another_image() {
+        let p = pair();
+        let mut session = crate::interaction::Session::new(100, 176);
+        session.document = p.document;
+        session.choose(Tool::Select);
+        session.document.selected = Some(session.document.objects[3].id);
+        session.press(Point::new(100., 136.), 1.);
+        assert!(session.release(Point::new(80., 136.)));
+        validate_tree(&session.document.objects).unwrap();
+        assert!(session.document.move_selected(0., -96.));
+        crate::render::flatten(&p.frame, &session.document).unwrap();
+        assert!(session.document.add(
+            Tool::Line,
+            vec![Point::new(10., 25.), Point::new(90., 25.)],
+            Style::default(),
+        ));
+        crate::render::flatten(&p.frame, &session.document).unwrap();
+        assert!(session.document.undo());
+        assert!(session.document.undo());
+        assert!(session.document.undo());
+        validate_tree(&session.document.objects).unwrap();
+    }
+
+    #[test]
     fn child_hit_follows_owner_move_and_parent_selection_without_mutating_local_points() {
         let mut d = pair().document;
         let parent = d.objects[3].id;

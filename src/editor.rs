@@ -706,6 +706,8 @@ impl Document {
         let (a, b) = bounds;
         let width = b.x - a.x;
         let height = b.y - a.y;
+        let preserve_aspect =
+            preserve_aspect || matches!(self.objects[i].content, Content::Group { .. });
         if [a.x, a.y, b.x, b.y]
             .iter()
             .any(|v| !v.is_finite() || v.abs() > 32767.)
