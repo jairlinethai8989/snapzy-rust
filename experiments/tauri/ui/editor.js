@@ -5,7 +5,7 @@ import {
   createIcons, X, Plus, Ellipsis, ScanText, CircleHelp, Copy, Download, MousePointer2, Crop, SquareDashedMousePointer,
   PenLine, Highlighter, Minus, MoveUpRight, Square, Circle, ChevronDown, Droplets,
   Type, MessageSquare, Sparkles, Layers3, Trash2, Undo2, Redo2, Check, Maximize, ImagePlus,
-  FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut,
+  FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut, Hand,
 } from "lucide";
 import {
   EDITOR_FONTS, EDITOR_PALETTE, EDITOR_TOOL_GROUPS, backendCommand, clampContextMenuPosition, contextMenuActions, createCommandQueue, hexToRgb, isContextMenuKey,
@@ -17,7 +17,7 @@ import {
 import { editorText, toolTextKey } from "./editor-i18n.js";
 import { combinedBounds, moveCandidate, selectedSessionIds } from "./combine-workflow.js";
 
-const icons = { X, Plus, Ellipsis, ScanText, CircleHelp, Copy, Download, MousePointer2, Crop, SquareDashedMousePointer, PenLine, Highlighter, Minus, MoveUpRight, Square, Circle, ChevronDown, Droplets, Type, MessageSquare, Sparkles, Layers3, Trash2, Undo2, Redo2, Check, Maximize, ImagePlus, FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut };
+const icons = { X, Plus, Ellipsis, ScanText, CircleHelp, Copy, Download, MousePointer2, Crop, SquareDashedMousePointer, PenLine, Highlighter, Minus, MoveUpRight, Square, Circle, ChevronDown, Droplets, Type, MessageSquare, Sparkles, Layers3, Trash2, Undo2, Redo2, Check, Maximize, ImagePlus, FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut, Hand };
 const $ = (selector) => document.querySelector(selector);
 const native = Boolean(window.__TAURI__?.core?.invoke);
 const invoke = (command, args = {}) => window.__TAURI__.core.invoke(command, args);
@@ -39,6 +39,7 @@ let mockObjects = [];
 let moveFrame = 0;
 let queuedMove = null;
 let spaceDown = false;
+let panMode = false;
 let textPoint = null;
 let workspaceRefreshPending = false;
 let stopWorkspaceListener = null;
@@ -137,6 +138,8 @@ function renderControls() {
   $("#zoom-in").disabled = !view || busy || state.zoom >= ZOOM_STEPS.at(-1);
   $("#zoom-value").disabled = !view || busy;
   $("#fit-view").disabled = !view || busy;
+  $("#pan-view").disabled = !view || busy;
+  $("#pan-view").setAttribute("aria-pressed", String(panMode));
   const textActive = ["Text", "Callout"].includes(state.activeTool) || view?.outline_supported === true;
   $("#font-control").hidden = !textActive;
   $("#text-background-control").hidden = !textActive;
@@ -815,6 +818,7 @@ async function bootstrapWorkspace() {
 
 async function chooseTool(tool) {
   closeMenu();
+  panMode = false;
   state = { ...state, activeTool: tool };
   if (!native && ["Text", "Callout"].includes(tool) && state.parameter < 8) state = { ...state, parameter: 24 };
   renderControls();
@@ -1085,6 +1089,15 @@ function renderCanvas() {
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, rect.width, rect.height);
   if (!state.view || !previewImage) return;
+  // Keep part of the image reachable even after a large scroll or window resize.
+  const visibleX = Math.min(48, rect.width / 2);
+  const visibleY = Math.min(48, rect.height / 2);
+  state = { ...state, pan: {
+    x: Math.min(rect.width - visibleX, Math.max(visibleX - state.view.width * state.zoom, state.pan.x)),
+    y: Math.min(rect.height - visibleY, Math.max(visibleY - state.view.height * state.zoom, state.pan.y)),
+  } };
+  canvas.classList.toggle("pan-ready", panMode || spaceDown);
+  canvas.classList.toggle("panning", pointer?.mode === "pan");
   context.save();
   context.translate(state.pan.x, state.pan.y);
   context.scale(state.zoom, state.zoom);
@@ -1278,6 +1291,7 @@ $("#scope-all").addEventListener("click", () => finishCloseScope("all"));
 $("#scope-cancel").addEventListener("click", () => finishCloseScope("cancel"));
 $("#close-scope-dialog").addEventListener("cancel", (event) => { event.preventDefault(); finishCloseScope("cancel"); });
 $("#fit-view").addEventListener("click", fitView);
+$("#pan-view").addEventListener("click", () => { panMode = !panMode; renderControls(); renderCanvas(); });
 $("#zoom-out").addEventListener("click", () => setZoomAtCenter(steppedZoom(state.zoom, -1)));
 $("#zoom-in").addEventListener("click", () => setZoomAtCenter(steppedZoom(state.zoom, 1)));
 $("#tool-size").addEventListener("change", (event) => { const value = Math.min(40, Math.max(1, Number(event.target.value) || 5)); state = { ...state, parameter: value }; void applyCommand(backendCommand("set_parameter", { value }), false); });
@@ -1306,11 +1320,13 @@ $("#confirm-crop").addEventListener("click", () => void applyCommand(backendComm
 $("#editor-canvas").addEventListener("pointerdown", (event) => {
   if (!state.view || busy) return;
   if (event.button === 2 || ![0, 1].includes(event.button)) return;
-  if (["Text", "Callout"].includes(state.activeTool) && event.button === 0 && !spaceDown) {
+  if (["Text", "Callout"].includes(state.activeTool) && event.button === 0 && !spaceDown && !panMode) {
     openTextEntry(canvasPoint(event), state.activeTool);
     return;
   }
-  const pan = event.button === 1 || spaceDown;
+  const pan = event.button === 1 || spaceDown || panMode;
+  event.preventDefault();
+  event.currentTarget.focus({ preventScroll: true });
   pointer = { id: event.pointerId, mode: pan ? "pan" : "draw", last: { x: event.clientX, y: event.clientY } };
   event.currentTarget.setPointerCapture(event.pointerId);
   if (!pan) {
@@ -1318,6 +1334,7 @@ $("#editor-canvas").addEventListener("pointerdown", (event) => {
     draft = state.activeTool === "Select" ? null : { tool: state.activeTool, points: [point], color: state.color, parameter: state.parameter, opacity: state.activeTool === "Highlighter" ? 40 : state.opacity, pattern: state.pattern };
     if (state.activeTool !== "DuplicateArea") void applyPointerCommand(backendCommand("press", { point, tolerance: 5 / state.zoom }));
   }
+  renderCanvas();
 });
 $("#editor-canvas").addEventListener("contextmenu", async (event) => {
   event.preventDefault();
@@ -1365,16 +1382,27 @@ $("#editor-canvas").addEventListener("pointerup", async (event) => {
     draft = null;
     if (duplicateStart) await applyCommand(backendCommand("duplicate_area", { start: duplicateStart, end: point }));
     else await applyPointerCommand(backendCommand("release", { point }), true);
-  } else rememberViewport();
+  }
   renderCanvas();
+  rememberViewport();
+});
+$("#editor-canvas").addEventListener("lostpointercapture", () => {
+  if (pointer?.mode === "pan") { pointer = null; renderCanvas(); rememberViewport(); }
 });
 $("#editor-canvas").addEventListener("wheel", (event) => {
-  if (!state.view || !event.ctrlKey) return;
+  if (!state.view || document.querySelector("dialog[open]")) return;
   event.preventDefault();
+  if (!event.ctrlKey) {
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? event.currentTarget.clientHeight : 1;
+    const dx = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX;
+    const dy = event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY;
+    state = { ...state, pan: { x: state.pan.x - dx * unit, y: state.pan.y - dy * unit } };
+    renderCanvas(); rememberViewport(); return;
+  }
   const bounds = event.currentTarget.getBoundingClientRect();
   const pointerPosition = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
   const next = zoomAround(state, pointerPosition, state.zoom * (event.deltaY < 0 ? 1.12 : .89));
-  state = { ...state, ...next }; rememberViewport(); renderControls(); renderCanvas();
+  state = { ...state, ...next }; renderControls(); renderCanvas(); rememberViewport();
 }, { passive: false });
 
 document.addEventListener("keydown", (event) => {
@@ -1397,7 +1425,7 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     return;
   }
-  if (event.code === "Space" && !event.repeat) { spaceDown = true; event.preventDefault(); }
+  if (event.code === "Space" && !event.repeat && !document.querySelector("dialog[open]")) { spaceDown = true; event.preventDefault(); renderCanvas(); }
   if (event.key === "Escape") {
     if (menuOwner) closeMenu(true);
     else if (document.querySelector("dialog[open]")) {
@@ -1417,7 +1445,7 @@ document.addEventListener("keydown", (event) => {
   if (shouldDuplicateShortcut({ key: event.key, ctrlKey: event.ctrlKey, repeat: event.repeat, editing }, state.view?.selected)) { event.preventDefault(); void applyCommand(backendCommand("duplicate_selection")); }
   if (event.key === "Enter" && state.view?.crop_ready) void applyCommand(backendCommand("confirm_crop"));
 });
-document.addEventListener("keyup", (event) => { if (event.code === "Space") spaceDown = false; });
+document.addEventListener("keyup", (event) => { if (event.code === "Space") { spaceDown = false; renderCanvas(); } });
 
 function scheduleTooltip(event) {
   dismissTooltip();
@@ -1436,7 +1464,11 @@ document.addEventListener("pointerout", dismissTooltip);
 document.addEventListener("focusin", scheduleTooltip);
 document.addEventListener("focusout", dismissTooltip);
 window.addEventListener("resize", renderCanvas);
-window.addEventListener("blur", () => { spaceDown = false; closeMenu(); dismissTooltip(); });
+window.addEventListener("blur", () => {
+  spaceDown = false;
+  if (pointer?.mode === "pan") pointer = null;
+  closeMenu(); dismissTooltip(); renderCanvas(); rememberViewport();
+});
 window.addEventListener("beforeunload", () => {
   if (previewUrl) URL.revokeObjectURL(previewUrl);
   if (typeof stopWorkspaceListener === "function") stopWorkspaceListener();

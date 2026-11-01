@@ -1,6 +1,15 @@
 # SnapZy Rust Preview
 
-**Source version:** 0.15.0-alpha.10 | **Latest installer:** 0.15.0-alpha.10 | **Platform:** Windows 10/11, x64 | **License:** MIT
+**Source version:** 0.15.0-alpha.14 | **Latest published installer:** 0.15.0-alpha.10 | **Platform:** Windows 10/11, x64 | **License:** MIT
+
+## Changes in 0.15.0-alpha.14 / สิ่งที่ปรับปรุง
+
+- Pan zoomed images with the hand button, Space + drag, or middle-button drag. Wheel scrolls vertically; Shift + wheel scrolls horizontally. Fit restores the complete image, and pan limits keep the workspace reachable.
+- เพิ่มปุ่มรูปมือสำหรับลากพื้นที่หลังซูม รองรับล้อเมาส์เลื่อนแนวตั้ง และ Shift + ล้อเมาส์เลื่อนแนวนอน กดพอดีเพื่อเรียกภาพกลับทั้งผืน และป้องกันลากภาพหายออกนอกจอทั้งหมด
+- Setup now checks for a running background `snapzy-engine.exe` before replacing files and explains how to close it before Retry.
+- ตัวติดตั้งตรวจระบบเบื้องหลังที่ยังทำงานก่อนเขียนทับไฟล์ พร้อมคำแนะนำให้ปิดแล้วกด Retry
+
+See [Alpha 14 verification notes](docs/testing/0.15.0-alpha.14.md). The download below points to the latest published installer; source updates do not automatically publish a new installer.
 
 ## Download / ดาวน์โหลด
 
@@ -42,7 +51,7 @@ EN/TH, capture options and command handoff.
 | --- | --- |
 | <a href="docs/images/snapzy-launcher-overview.png"><img src="docs/images/snapzy-launcher-overview.png" width="420" alt="SnapZy capture launcher"></a> | <a href="docs/images/snapzy-editor-overview.png"><img src="docs/images/snapzy-editor-overview.png" width="420" alt="SnapZy image editor"></a> |
 
-คู่มืออ้างอิง Tauri Editor `0.15.0-alpha.10` และระบุคำสั่งที่ยังไม่เชื่อมต่อในรุ่นนี้ไว้แล้ว โดยไฟล์งาน `.snapzy` รองรับเปิด บันทึก และบันทึกเป็นแล้ว
+คู่มืออัปเดตถึง Tauri Editor `0.15.0-alpha.14` ภาพประกอบอ้างอิงหน้าตารุ่นก่อนหน้า โดยไฟล์งาน `.snapzy` รองรับเปิด บันทึก และบันทึกเป็นแล้ว
 
 ## Workspace size / ปรับขนาดพื้นที่ทำงาน
 

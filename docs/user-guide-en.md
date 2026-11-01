@@ -1,4 +1,4 @@
-# SnapZy 0.15.0-alpha.12 User Guide
+# SnapZy 0.15.0-alpha.14 User Guide
 
 This guide describes the capture launcher and image editor in SnapZy Rust `0.15.0-alpha.10`. The screenshots use synthetic sample data created for this guide.
 
@@ -57,6 +57,8 @@ The More menu contains commands for the entire desktop, keyboard shortcuts, and 
 
 - `Ctrl` + mouse wheel: zoom around the pointer
 - `Space` + drag: pan the workspace
+- Click the hand button beside zoom, then drag to pan without holding a key. Selecting a drawing tool returns to editing.
+- Mouse wheel: scroll vertically; `Shift` + wheel: scroll horizontally. Middle-button drag also pans. Fit restores the full image; panning does not change image pixels or objects.
 - `Ctrl` + `+` or `=`: zoom in; `Ctrl` + `-`: zoom out; `Ctrl` + `0`: fit the image
 - `Ctrl` + `Z`: undo; `Ctrl` + `Shift` + `Z` or `Ctrl` + `Y`: redo
 - `Ctrl` + `D`: duplicate the selected object; `Delete`: remove it
@@ -77,6 +79,6 @@ Combined image groups preserve their proportions when resized, including with si
 Closing the capture launcher with X keeps SnapZy running in the System Tray.
 Click the tray icon to reopen it, or right-click and choose **Exit** to quit.
 
-## Alpha 12 limitations
+## Alpha 14 limitations
 
 The **OCR** and **Add Image** commands remain visible but are not connected in the Tauri Editor. **Open Project**, **Save**, and **Save As** use editable `.snapzy` project files. Copy image and Save PNG export a flattened image and do not mark the editable project as saved.

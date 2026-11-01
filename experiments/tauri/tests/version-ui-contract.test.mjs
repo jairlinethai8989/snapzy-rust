@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const expectedVersion = "0.15.0-alpha.12";
+const expectedVersion = "0.15.0-alpha.14";
 const versionPattern = new RegExp(expectedVersion.replaceAll(".", "\\."));
 const root = new URL("..", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -92,7 +92,7 @@ test("combine images opens an editable tab instead of an unavailable notice", as
 test("Windows bundle is a current-user upgrade with guarded legacy migration", async () => {
   const tauriConfig = JSON.parse(await read("src-tauri/tauri.conf.json"));
   const hook = await read("src-tauri/windows/installer-hooks.nsh");
-  const migration = await read("src-tauri/resources/migration/migrate-legacy.ps1");
+  const migration = await read("src-tauri/windows/migrate-legacy.ps1");
 
   assert.deepEqual(tauriConfig.bundle.targets, ["nsis"]);
   assert.equal(tauriConfig.bundle.active, true);
