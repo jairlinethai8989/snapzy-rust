@@ -1,6 +1,13 @@
 # SnapZy Rust Preview
 
-**Source version:** 0.15.0-alpha.16 (trial) | **Latest public installer:** 0.15.0-alpha.14 | **Platform:** Windows 10/11, x64 | **License:** MIT
+**Source version:** 0.15.0-alpha.16 (trial) | **Latest public installer:** 0.15.0-alpha.16 | **Platform:** Windows 10/11, x64 | **License:** MIT
+
+## Alpha 16 trial / รุ่นทดลอง Alpha 16
+
+- Arrowhead presets support an end arrowhead or arrowheads at both ends.
+- Callout frames support rounded, square, and oval styles.
+- Undo is available with Ctrl+Z; redo works with Ctrl+Shift+Z or Ctrl+Y.
+- รุ่นนี้เพิ่มรูปแบบหัวลูกศรทั้งปลายเดียวและสองปลาย เพิ่มกรอบคำพูดแบบมน/เหลี่ยม/วงรี และรองรับ Undo/Redo ด้วยคีย์ลัด
 
 ## Alpha 15 trial / รุ่นทดลอง Alpha 15
 
@@ -22,15 +29,15 @@ See [Alpha 14 verification notes](docs/testing/0.15.0-alpha.14.md) for the teste
 
 **Windows 10/11 · 64-bit · Pre-release**
 
-[⬇ Download SnapZy 0.15.0-alpha.14 for Windows](https://github.com/jairlinethai8989/snapzy-rust/releases/download/v0.15.0-alpha.14/SnapZy-Setup-0.15.0-alpha.14-win-x64.exe)
+[⬇ Download SnapZy 0.15.0-alpha.16 for Windows](https://github.com/jairlinethai8989/snapzy-rust/releases/download/v0.15.0-alpha.16/SnapZy-Setup-0.15.0-alpha.16-win-x64.exe)
 
 New to GitHub? On the release page, expand **Assets** and choose
-`SnapZy-Setup-0.15.0-alpha.14-win-x64.exe`. Open the downloaded file and follow
+`SnapZy-Setup-0.15.0-alpha.16-win-x64.exe`. Open the downloaded file and follow
 the setup steps. This pre-release installer is unsigned, so Windows may show a
 SmartScreen warning.
 
 สำหรับมือใหม่: กดลิงก์ดาวน์โหลดด้านบน หรือเปิดหน้า Release แล้วกด **Assets**
-จากนั้นเลือก `SnapZy-Setup-0.15.0-alpha.14-win-x64.exe` เปิดไฟล์ที่ดาวน์โหลด
+จากนั้นเลือก `SnapZy-Setup-0.15.0-alpha.16-win-x64.exe` เปิดไฟล์ที่ดาวน์โหลด
 แล้วทำตามขั้นตอนติดตั้ง รุ่นนี้เป็นรุ่นทดสอบและไฟล์ติดตั้งยังไม่ได้ลงลายเซ็น
 Windows จึงอาจแสดงคำเตือน SmartScreen
 
