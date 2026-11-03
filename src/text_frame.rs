@@ -252,6 +252,7 @@ mod tests {
             rendering: Default::default(),
             opacity: 100,
             effects: Default::default(),
+            arrow_heads: Default::default(),
             content: Content::Text {
                 text: Arc::from("Text"),
                 size: 24,
@@ -260,6 +261,7 @@ mod tests {
                 background: Default::default(),
                 tail: None,
                 layout: crate::editor::TextLayout::Native,
+                callout_style: Default::default(),
                 mask: Arc::new(crate::glyphs::Mask {
                     width: 120,
                     height: 60,

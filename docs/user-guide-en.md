@@ -1,4 +1,4 @@
-# SnapZy 0.15.0-alpha.14 User Guide
+# SnapZy 0.15.0-alpha.16 User Guide
 
 This guide describes the capture launcher and image editor in SnapZy Rust `0.15.0-alpha.10`. The screenshots use synthetic sample data created for this guide.
 
@@ -27,13 +27,13 @@ The More menu contains commands for the entire desktop, keyboard shortcuts, and 
 
 | No. | Control | What it does |
 | --- | --- | --- |
-| 1 | **Document tabs** | Switch between open images. Use `+` to open another image. |
+| 1 | **Document tabs** | Switch between open work. Use `+` to create a white 1024 × 768 blank canvas. |
 | 2 | **Top commands** | More, Workspace size, Combine images, OCR, Help, language, Copy image, and Save PNG. |
 | 3 | **Select / Crop / Duplicate area** | Select and edit objects, crop the image, or drag a region to create a movable image copy. |
 | 4 | **Pen / Highlighter / Line / Arrow** | Choose a drawing tool and drag on the canvas. |
 | 5 | **Outline / Filled shapes** | Open a menu to choose a rectangle or ellipse, then drag to draw it. |
 | 6 | **Blur / Step / Text / Speech bubble** | Add an obscured region or an annotation. Text and speech bubbles open an entry dialog before placement. |
-| 7 | **Effects / Layer order** | Set shadows or text outlines and arrange objects in front of or behind other objects. |
+| 7 | **Effects / Layer order / Groups** | Set effects, arrange object order, and group or ungroup selected objects. |
 | 8 | **Object and history actions** | Duplicate or delete the selected object, undo, or redo. |
 | 9 | **Tool settings** | Adjust color, size, line style, font, text background, and opacity for the selected tool. |
 | 10 | **Zoom and Fit** | Zoom in or out, choose a zoom level, or fit the full image in the workspace. |
@@ -41,10 +41,16 @@ The More menu contains commands for the entire desktop, keyboard shortcuts, and 
 
 ## Edit an image
 
-1. Capture an image from the launcher, or open a PNG, JPEG, or BMP using `+` or the Open Image command in the editor.
+1. Capture an image from the launcher, or choose **More → Open image** to open a PNG, JPEG, or BMP. Use `+` to create a blank canvas.
 2. Choose a tool from the toolbar and drag on the canvas to create an object. For text and speech bubbles, enter the text in the dialog that appears.
-3. Select an object to move or resize it. Use the tool settings to change its color, size, line style, font, background, or opacity.
+3. After drawing, SnapZy returns to Select with the new object selected. Move or resize it, or change its color, size, line style, font, background, or opacity.
 4. Use **Copy image** to copy the edited image, or **Save PNG** to export an image file.
+
+## Group objects
+
+1. With Select active, drag a rectangle from empty canvas space around the objects you want. Fully enclose each object.
+2. Click **Group** or press `Ctrl+G`. Drag any member to move the group together.
+3. Click **Ungroup** or press `Ctrl+Shift+G` to edit members separately. Grouping supports Undo/Redo and survives saving and reopening a `.snapzy` project.
 
 ## Combine open image tabs
 
@@ -79,6 +85,6 @@ Combined image groups preserve their proportions when resized, including with si
 Closing the capture launcher with X keeps SnapZy running in the System Tray.
 Click the tray icon to reopen it, or right-click and choose **Exit** to quit.
 
-## Alpha 14 limitations
+## Alpha 15 limitations
 
 The **OCR** and **Add Image** commands remain visible but are not connected in the Tauri Editor. **Open Project**, **Save**, and **Save As** use editable `.snapzy` project files. Copy image and Save PNG export a flattened image and do not mark the editable project as saved.

@@ -2,6 +2,109 @@ use crate::frame::Rect;
 use std::sync::Arc;
 
 #[cfg(test)]
+mod grouping_tests {
+    use super::*;
+
+    #[test]
+    fn marquee_groups_two_objects_and_moves_them_as_one_undoable_edit() {
+        let mut d = Document::new(200, 120);
+        for x in [10., 60., 150.] {
+            assert!(d.add(
+                Tool::Rectangle,
+                vec![Point::new(x, 10.), Point::new(x + 20., 30.)],
+                Style::default()
+            ));
+        }
+        assert_eq!(d.select_area(Point::new(5., 5.), Point::new(100., 40.)), 2);
+        assert_eq!(d.selected_ids().len(), 2);
+        assert!(d.group_selection());
+        assert_eq!(d.groups.len(), 1);
+        let first = d.objects[0].id;
+        d.select_hit(first);
+        assert_eq!(d.selected_ids().len(), 2);
+        assert!(d.move_selected(5., 7.));
+        assert_eq!(d.objects[0].points[0], Point::new(15., 17.));
+        assert_eq!(d.objects[1].points[0], Point::new(65., 17.));
+        assert_eq!(d.objects[2].points[0], Point::new(150., 10.));
+        assert!(d.undo());
+        assert_eq!(d.objects[0].points[0], Point::new(10., 10.));
+        assert_eq!(d.objects[1].points[0], Point::new(60., 10.));
+        assert!(d.ungroup_selection());
+        assert!(d.groups.is_empty());
+        assert!(d.undo());
+        assert_eq!(d.groups.len(), 1);
+    }
+
+    #[test]
+    fn duplicate_group_keeps_independent_editable_members_and_new_group_identity() {
+        let mut d = Document::new(160, 100);
+        for x in [10., 50.] {
+            d.add(
+                Tool::Rectangle,
+                vec![Point::new(x, 10.), Point::new(x + 15., 25.)],
+                Style::default(),
+            );
+        }
+        d.select_area(Point::new(5., 5.), Point::new(75., 35.));
+        assert!(d.group_selection());
+        assert!(d.duplicate_selected().unwrap());
+        assert_eq!(d.objects.len(), 4);
+        assert_eq!(d.groups.len(), 2);
+        assert_eq!(d.selected_ids().len(), 2);
+        assert!(d.undo());
+        assert_eq!(d.objects.len(), 2);
+        assert_eq!(d.groups.len(), 1);
+    }
+
+    #[test]
+    fn deleting_a_group_removes_all_members_and_undo_restores_them() {
+        let mut d = Document::new(160, 100);
+        for x in [10., 50.] {
+            d.add(
+                Tool::Rectangle,
+                vec![Point::new(x, 10.), Point::new(x + 15., 25.)],
+                Style::default(),
+            );
+        }
+        d.select_area(Point::new(5., 5.), Point::new(75., 35.));
+        d.group_selection();
+        d.select_hit(d.objects[1].id);
+        assert!(d.delete());
+        assert!(d.objects.is_empty());
+        assert!(d.groups.is_empty());
+        assert!(d.undo());
+        assert_eq!(d.objects.len(), 2);
+        assert_eq!(d.groups.len(), 1);
+        assert!(d.redo());
+        assert!(d.objects.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod callout_preset_tests {
+    use super::*;
+
+    #[test]
+    fn oval_frame_surrounds_text_and_keeps_the_tail_outside() {
+        let mut document = Document::new(400, 300);
+        document.add_callout(Point::new(50., 50.), "Wide note", 24, Style::default(), Background::default()).unwrap();
+        assert!(document.set_callout_style(CalloutStyle::Ellipse));
+        let callout = &document.objects[0];
+        let (a, b) = callout.body_bounds();
+        let (text_a, text_b) = callout.bounds();
+        assert!(a.x < text_a.x && a.y < text_a.y);
+        assert!(b.x > text_b.x && b.y > text_b.y);
+        let center = Point::new((a.x + b.x) / 2., (a.y + b.y) / 2.);
+        let rx = (b.x - a.x) / 2.;
+        let ry = (b.y - a.y) / 2.;
+        for corner in [text_a, text_b, Point::new(text_a.x, text_b.y), Point::new(text_b.x, text_a.y)] {
+            assert!(((corner.x - center.x) / rx).powi(2) + ((corner.y - center.y) / ry).powi(2) < 1.);
+        }
+        assert!(callout.tail_tip().unwrap().y > b.y);
+    }
+}
+
+#[cfg(test)]
 mod project_state_tests {
     use super::*;
 
@@ -247,6 +350,21 @@ pub struct Annotation {
     pub content: Content,
     pub opacity: u8,
     pub effects: crate::effects::Effects,
+    pub arrow_heads: ArrowHeads,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ArrowHeads {
+    #[default]
+    End,
+    Both,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CalloutStyle {
+    #[default]
+    Rounded,
+    Square,
+    Ellipse,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -299,6 +417,7 @@ pub enum Content {
         background: Background,
         tail: Option<Point>,
         layout: TextLayout,
+        callout_style: CalloutStyle,
     },
     Step {
         number: u32,
@@ -310,6 +429,12 @@ pub enum Content {
     },
 }
 impl Annotation {
+    pub fn callout_style(&self) -> CalloutStyle {
+        match self.content {
+            Content::Text { callout_style, .. } => callout_style,
+            _ => CalloutStyle::Rounded,
+        }
+    }
     pub fn curve_midpoint(&self) -> Option<Point> {
         matches!(self.tool, Tool::Line | Tool::Arrow)
             .then(|| crate::geometry::curve_point(self, 0.5))
@@ -320,7 +445,7 @@ impl Annotation {
         } = self.content
         {
             let mut tip = Point::new(self.points[0].x + tip.x, self.points[0].y + tip.y);
-            if matches!(
+            if self.callout_style() == CalloutStyle::Ellipse || matches!(
                 self.content,
                 Content::Text {
                     layout: TextLayout::DotNet {
@@ -407,7 +532,7 @@ impl Annotation {
         }
     }
     pub fn body_bounds(&self) -> (Point, Point) {
-        if let Content::Text {
+        let (a, b) = if let Content::Text {
             layout:
                 TextLayout::DotNet {
                     bubble: Some(frame),
@@ -421,13 +546,19 @@ impl Annotation {
             let height = frame
                 .min_height
                 .max(mask.height as f64 + frame.padding * 2.);
-            return (p, Point::new(p.x + frame.width, p.y + height));
-        }
-        let (a, b) = self.bounds();
-        if self.tool == Tool::Callout {
+            (p, Point::new(p.x + frame.width, p.y + height))
+        } else {
+            let (a, b) = self.bounds();
+            if self.tool == Tool::Callout {
+                (Point::new(a.x - 8., a.y - 8.), Point::new(b.x + 8., b.y + 8.))
+            } else { (a, b) }
+        };
+        if self.tool == Tool::Callout && self.callout_style() == CalloutStyle::Ellipse {
+            let pad_x = (b.x - a.x) * 0.25 + 12.;
+            let pad_y = (b.y - a.y) * 0.25 + 12.;
             (
-                Point::new(a.x - 8., a.y - 8.),
-                Point::new(b.x + 8., b.y + 8.),
+                Point::new(a.x - pad_x, a.y - pad_y),
+                Point::new(b.x + pad_x, b.y + pad_y),
             )
         } else {
             (a, b)
@@ -446,7 +577,7 @@ impl Annotation {
                 )
             };
             if self.tool == Tool::Arrow {
-                for (_, p) in crate::geometry::arrowhead(self) {
+                for (_, p) in crate::geometry::arrowheads(self) {
                     a.x = a.x.min(p.x);
                     a.y = a.y.min(p.y);
                     b.x = b.x.max(p.x);
@@ -519,6 +650,8 @@ struct Snapshot {
     source_clip: Option<Rect>,
     objects: Vec<Annotation>,
     selected: Option<u64>,
+    selected_extra: Vec<u64>,
+    groups: Vec<Vec<u64>>,
     restore_selection: bool,
     revision: u64,
 }
@@ -528,6 +661,8 @@ pub struct Document {
     pub source_clip: Option<Rect>,
     pub objects: Vec<Annotation>,
     pub selected: Option<u64>,
+    pub selected_extra: Vec<u64>,
+    pub groups: Vec<Vec<u64>>,
     pub revision: u64,
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
@@ -557,6 +692,141 @@ fn duplicate_axis_offset(min: f64, max: f64, canvas_min: f64, canvas_max: f64, s
 }
 
 impl Document {
+    pub fn validate_groups(objects: &[Annotation], groups: &[Vec<u64>]) -> Result<(), String> {
+        let mut seen = std::collections::HashSet::new();
+        if groups.len() > 1000 {
+            return Err("Too many object groups.".into());
+        }
+        for group in groups {
+            if group.len() < 2 || group.len() > 2000 {
+                return Err("Invalid object group.".into());
+            }
+            for id in group {
+                if !seen.insert(*id)
+                    || !objects
+                        .iter()
+                        .any(|object| object.id == *id && object.parent.is_none())
+                {
+                    return Err("Invalid object group member.".into());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn selected_ids(&self) -> Vec<u64> {
+        let mut ids = Vec::new();
+        for id in self
+            .selected
+            .into_iter()
+            .chain(self.selected_extra.iter().copied())
+        {
+            if let Some(group) = self.groups.iter().find(|group| group.contains(&id)) {
+                for member in group {
+                    if !ids.contains(member) {
+                        ids.push(*member);
+                    }
+                }
+            } else if self.objects.iter().any(|object| object.id == id) && !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        ids
+    }
+
+    pub fn select_hit(&mut self, id: u64) {
+        let mut current = Some(id);
+        let mut grouped_root = None;
+        while let Some(candidate) = current {
+            if self.groups.iter().any(|group| group.contains(&candidate)) {
+                grouped_root = Some(candidate);
+                break;
+            }
+            current = self
+                .objects
+                .iter()
+                .find(|object| object.id == candidate)
+                .and_then(|object| object.parent);
+        }
+        self.selected = grouped_root.or_else(|| {
+            self.objects
+                .iter()
+                .any(|object| object.id == id)
+                .then_some(id)
+        });
+        self.selected_extra.clear();
+    }
+
+    pub fn select_area(&mut self, start: Point, end: Point) -> usize {
+        self.selected = None;
+        self.selected_extra.clear();
+        if ![start.x, start.y, end.x, end.y]
+            .iter()
+            .all(|v| v.is_finite())
+        {
+            return 0;
+        }
+        let (left, right) = (start.x.min(end.x), start.x.max(end.x));
+        let (top, bottom) = (start.y.min(end.y), start.y.max(end.y));
+        if right - left < 3. || bottom - top < 3. {
+            return 0;
+        }
+        let ids: Vec<_> = self
+            .objects
+            .iter()
+            .filter(|object| object.parent.is_none())
+            .filter_map(|object| {
+                let (a, b) = object.bounds();
+                (a.x >= left && b.x <= right && a.y >= top && b.y <= bottom).then_some(object.id)
+            })
+            .collect();
+        self.selected = ids.first().copied();
+        self.selected_extra.extend(ids.iter().skip(1).copied());
+        self.selected_ids().len()
+    }
+
+    pub fn group_selection(&mut self) -> bool {
+        let ids = self.selected_ids();
+        if ids.len() < 2
+            || ids.iter().any(|id| {
+                !self
+                    .objects
+                    .iter()
+                    .any(|o| o.id == *id && o.parent.is_none())
+            })
+        {
+            return false;
+        }
+        if self.groups.iter().any(|group| *group == ids) {
+            return false;
+        }
+        self.begin_edit_with_selection(true);
+        self.groups
+            .retain(|group| !group.iter().any(|id| ids.contains(id)));
+        self.groups.push(ids);
+        self.selected_extra.clear();
+        true
+    }
+
+    pub fn ungroup_selection(&mut self) -> bool {
+        let ids = self.selected_ids();
+        if !self
+            .groups
+            .iter()
+            .any(|group| group.iter().any(|id| ids.contains(id)))
+        {
+            return false;
+        }
+        self.begin_edit_with_selection(true);
+        self.groups
+            .retain(|group| !group.iter().any(|id| ids.contains(id)));
+        self.selected_extra = ids
+            .into_iter()
+            .filter(|id| Some(*id) != self.selected)
+            .collect();
+        true
+    }
+
     pub fn add_duplicated_image_at(
         &mut self,
         frame: Arc<crate::frame::Frame>,
@@ -918,6 +1188,7 @@ impl Document {
             background,
             tail,
             layout,
+            callout_style,
         } = &self.objects[i].content
         else {
             return Ok(false);
@@ -1018,6 +1289,7 @@ impl Document {
             background: *background,
             tail,
             layout,
+            callout_style: *callout_style,
         };
         if content == self.objects[i].content && p == self.objects[i].points[0] {
             return Ok(false);
@@ -1036,6 +1308,8 @@ impl Document {
             source_clip: self.source_clip,
             objects: self.objects.clone(),
             selected: None,
+            selected_extra: vec![],
+            groups: self.groups.clone(),
             revision: self.revision,
             undo: vec![],
             redo: vec![],
@@ -1098,8 +1372,10 @@ impl Document {
             opacity: 100,
             effects: crate::effects::Effects::default(),
             pattern: Pattern::Solid,
+            arrow_heads: ArrowHeads::End,
         });
         self.selected = Some(id);
+        self.selected_extra.clear();
         true
     }
     pub fn add_text(
@@ -1162,6 +1438,7 @@ impl Document {
             background,
             tail,
             layout: TextLayout::Native,
+            callout_style: CalloutStyle::Rounded,
         };
         if !self.permits_mask(&content) {
             return Err("Text memory limit reached. Use shorter text or fewer edits.".into());
@@ -1207,6 +1484,7 @@ impl Document {
             TextLayout::DotNet { .. } => crate::glyphs::dotnet_text_font(text, size, width, font)?,
         });
         let background = self.objects[i].text_background().unwrap();
+        let callout_style = self.objects[i].callout_style();
         let tail = if let Content::Text { tail, .. } = self.objects[i].content {
             tail
         } else {
@@ -1228,6 +1506,7 @@ impl Document {
             background,
             tail,
             layout,
+            callout_style,
         };
         if !self.permits_mask(&content) {
             return Err("Text memory limit reached. Use shorter text or fewer edits.".into());
@@ -1345,6 +1624,8 @@ impl Document {
             source_clip: Some(Rect::new(0, 0, width, height).unwrap()),
             objects: vec![],
             selected: None,
+            selected_extra: vec![],
+            groups: vec![],
             revision: 0,
             undo: vec![],
             redo: vec![],
@@ -1358,7 +1639,17 @@ impl Document {
         source_clip: Option<Rect>,
         objects: Vec<Annotation>,
     ) -> Result<Self, String> {
+        Self::from_project_with_groups(crop, source_clip, objects, vec![])
+    }
+
+    pub fn from_project_with_groups(
+        crop: Rect,
+        source_clip: Option<Rect>,
+        objects: Vec<Annotation>,
+        groups: Vec<Vec<u64>>,
+    ) -> Result<Self, String> {
         crate::combine::validate_tree(&objects)?;
+        Self::validate_groups(&objects, &groups)?;
         let next = objects
             .iter()
             .map(|o| o.id)
@@ -1372,6 +1663,8 @@ impl Document {
             source_clip,
             objects,
             selected: None,
+            selected_extra: vec![],
+            groups,
             revision: 0,
             undo: vec![],
             redo: vec![],
@@ -1392,6 +1685,8 @@ impl Document {
             source_clip: self.source_clip,
             objects: self.objects.clone(),
             selected: self.selected,
+            selected_extra: self.selected_extra.clone(),
+            groups: self.groups.clone(),
             restore_selection,
             revision: self.revision,
         }
@@ -1412,13 +1707,17 @@ impl Document {
         self.crop = s.crop;
         self.source_clip = s.source_clip;
         self.objects = s.objects;
+        self.groups = s.groups;
         if s.restore_selection {
             self.selected = s.selected;
+            self.selected_extra = s.selected_extra;
         }
         self.revision = s.revision;
         if !self.objects.iter().any(|o| Some(o.id) == self.selected) {
             self.selected = None;
         }
+        self.selected_extra
+            .retain(|id| self.objects.iter().any(|o| o.id == *id));
     }
     pub fn add(&mut self, tool: Tool, points: Vec<Point>, style: Style) -> bool {
         if !matches!(
@@ -1474,8 +1773,10 @@ impl Document {
             pattern: Pattern::Solid,
             opacity: if tool == Tool::Highlighter { 40 } else { 100 },
             effects: crate::effects::Effects::default(),
+            arrow_heads: ArrowHeads::End,
         });
         self.selected = Some(id);
+        self.selected_extra.clear();
         true
     }
     pub fn undo(&mut self) -> bool {
@@ -1541,6 +1842,24 @@ impl Document {
         };
         self.begin_edit();
         self.objects[i].pattern = pattern;
+        true
+    }
+    pub fn set_arrow_heads(&mut self, heads: ArrowHeads) -> bool {
+        let Some(i) = self.objects.iter().position(|o| {
+            Some(o.id) == self.selected && o.tool == Tool::Arrow && o.arrow_heads != heads
+        }) else { return false };
+        self.begin_edit();
+        self.objects[i].arrow_heads = heads;
+        true
+    }
+    pub fn set_callout_style(&mut self, style: CalloutStyle) -> bool {
+        let Some(i) = self.objects.iter().position(|o| {
+            Some(o.id) == self.selected && o.tool == Tool::Callout && matches!(o.content, Content::Text { callout_style, .. } if callout_style != style)
+        }) else { return false };
+        self.begin_edit();
+        if let Content::Text { callout_style, .. } = &mut self.objects[i].content {
+            *callout_style = style;
+        }
         true
     }
     pub fn set_curve_midpoint(&mut self, midpoint: Point) -> bool {
@@ -1683,23 +2002,26 @@ impl Document {
         !self.redo.is_empty()
     }
     pub fn delete(&mut self) -> bool {
-        let Some(i) = self
-            .objects
-            .iter()
-            .position(|o| Some(o.id) == self.selected)
-        else {
+        let selected = self.selected_ids();
+        if selected.is_empty() {
             return false;
-        };
+        }
         self.begin_edit();
-        let id = self.objects[i].id;
         let remove: std::collections::HashSet<_> = self
             .objects
             .iter()
-            .filter(|o| o.id == id || self.is_descendant(o.id, id))
+            .filter(|o| {
+                selected.contains(&o.id) || selected.iter().any(|id| self.is_descendant(o.id, *id))
+            })
             .map(|o| o.id)
             .collect();
         self.objects.retain(|o| !remove.contains(&o.id));
+        for group in &mut self.groups {
+            group.retain(|id| !remove.contains(id));
+        }
+        self.groups.retain(|group| group.len() >= 2);
         self.selected = None;
+        self.selected_extra.clear();
         true
     }
 
@@ -1712,13 +2034,15 @@ impl Document {
             return Ok(false);
         };
         let root = self.objects[index].clone();
+        let roots = self.selected_ids();
         let source_indices: Vec<_> = self
             .objects
             .iter()
             .enumerate()
             .filter_map(|(candidate, object)| {
-                (object.id == root.id || self.is_descendant(object.id, root.id))
-                    .then_some(candidate)
+                (roots.contains(&object.id)
+                    || roots.iter().any(|id| self.is_descendant(object.id, *id)))
+                .then_some(candidate)
             })
             .collect();
         let count = source_indices.len();
@@ -1749,7 +2073,38 @@ impl Document {
         }
         let scale = self.parent_transform(root.id).scale;
         let step = 16. / scale;
-        let (a, b) = root.bounds();
+        let (a, b) = if roots.len() > 1 {
+            let bounds: Vec<_> = self
+                .objects
+                .iter()
+                .filter(|o| roots.contains(&o.id))
+                .map(Annotation::bounds)
+                .collect();
+            (
+                Point::new(
+                    bounds
+                        .iter()
+                        .map(|(a, _)| a.x)
+                        .fold(f64::INFINITY, f64::min),
+                    bounds
+                        .iter()
+                        .map(|(a, _)| a.y)
+                        .fold(f64::INFINITY, f64::min),
+                ),
+                Point::new(
+                    bounds
+                        .iter()
+                        .map(|(_, b)| b.x)
+                        .fold(f64::NEG_INFINITY, f64::max),
+                    bounds
+                        .iter()
+                        .map(|(_, b)| b.y)
+                        .fold(f64::NEG_INFINITY, f64::max),
+                ),
+            )
+        } else {
+            root.bounds()
+        };
         let canvas = self.local_canvas(root.id);
         let offset = Point::new(
             duplicate_axis_offset(a.x, b.x, canvas.x as f64, canvas.right() as f64, step),
@@ -1760,7 +2115,7 @@ impl Document {
             let source = &self.objects[*candidate];
             let mut duplicate = source.clone();
             duplicate.id = remap[&source.id];
-            duplicate.parent = if source.id == root.id {
+            duplicate.parent = if roots.contains(&source.id) {
                 source.parent
             } else {
                 Some(
@@ -1770,7 +2125,7 @@ impl Document {
                         .ok_or("Duplicate ownership is incomplete.")?,
                 )
             };
-            if source.id == root.id {
+            if roots.contains(&source.id) {
                 duplicate.points = Arc::new(
                     source
                         .points
@@ -1793,14 +2148,30 @@ impl Document {
         let insert_at = source_indices.iter().copied().max().unwrap() + 1;
         let mut proposed = self.objects.clone();
         proposed.splice(insert_at..insert_at, duplicates.iter().cloned());
-        if crate::combine::validate_tree(&proposed).is_err() {
+        let new_groups: Vec<Vec<u64>> = self
+            .groups
+            .iter()
+            .filter(|group| group.iter().all(|id| roots.contains(id)))
+            .map(|group| group.iter().map(|id| remap[id]).collect())
+            .collect();
+        let mut proposed_groups = self.groups.clone();
+        proposed_groups.extend(new_groups);
+        if crate::combine::validate_tree(&proposed).is_err()
+            || Self::validate_groups(&proposed, &proposed_groups).is_err()
+        {
             return Err("Cannot duplicate this object within the editor limits.".into());
         }
         self.begin_edit_with_selection(true);
         debug_assert_eq!(self.revision, duplicates[0].id);
         self.next = next_after;
         self.objects.splice(insert_at..insert_at, duplicates);
+        self.groups = proposed_groups;
         self.selected = remap.get(&root.id).copied();
+        self.selected_extra = roots
+            .iter()
+            .filter(|id| **id != root.id)
+            .filter_map(|id| remap.get(id).copied())
+            .collect();
         Ok(true)
     }
 
@@ -1808,28 +2179,36 @@ impl Document {
         if !dx.is_finite() || !dy.is_finite() || (dx.abs() < 0.001 && dy.abs() < 0.001) {
             return false;
         }
-        let Some(i) = self
-            .objects
-            .iter()
-            .position(|o| Some(o.id) == self.selected)
-        else {
+        let selected = self.selected_ids();
+        if selected.is_empty() {
             return false;
-        };
-        let scale = self.parent_transform(self.objects[i].id).scale;
-        let (dx, dy) = (dx / scale, dy / scale);
-        let points: Vec<_> = self.objects[i]
-            .points
+        }
+        let proposed: Vec<_> = selected
             .iter()
-            .map(|p| Point::new(p.x + dx, p.y + dy))
+            .filter_map(|id| {
+                let object = self.objects.iter().find(|o| o.id == *id)?;
+                let scale = self.parent_transform(*id).scale;
+                let points: Vec<_> = object
+                    .points
+                    .iter()
+                    .map(|p| Point::new(p.x + dx / scale, p.y + dy / scale))
+                    .collect();
+                Some((*id, points))
+            })
             .collect();
-        if points
-            .iter()
-            .any(|p| p.x.abs() > 32767. || p.y.abs() > 32767.)
+        if proposed.len() != selected.len()
+            || proposed.iter().flat_map(|(_, points)| points).any(|p| {
+                !p.x.is_finite() || !p.y.is_finite() || p.x.abs() > 32767. || p.y.abs() > 32767.
+            })
         {
             return false;
         }
         self.begin_edit();
-        self.objects[i].points = Arc::new(points);
+        for (id, points) in proposed {
+            if let Some(object) = self.objects.iter_mut().find(|o| o.id == id) {
+                object.points = Arc::new(points);
+            }
+        }
         true
     }
     pub fn restyle(&mut self, style: Style) -> bool {
@@ -1900,12 +2279,13 @@ impl Document {
                         point.x >= a.x && point.x <= b.x && point.y >= a.y && point.y <= b.y
                     };
                     return inside_text
-                        || crate::callout::hit(
+                        || crate::callout::hit_style(
                             o.body_bounds(),
                             tip,
                             point,
                             tolerance + o.style.width as f64 / 2.,
                             o.text_background().is_some_and(|b| b.enabled),
+                            o.callout_style(),
                         );
                 }
                 if let Content::Step { diameter, .. } = o.content {
@@ -1987,7 +2367,7 @@ pub fn segments(o: &Annotation) -> Vec<(Point, Point)> {
         let path = crate::geometry::polyline(o);
         let mut lines: Vec<_> = path.windows(2).map(|p| (p[0], p[1])).collect();
         if o.tool == Tool::Arrow {
-            lines.extend(crate::geometry::arrowhead(o));
+            lines.extend(crate::geometry::arrowheads(o));
         }
         lines
     }
@@ -2085,6 +2465,7 @@ mod tests {
             },
             opacity: 80,
             effects: Default::default(),
+            arrow_heads: ArrowHeads::End,
         };
         let child = Annotation {
             id: 11,
@@ -2100,6 +2481,7 @@ mod tests {
             content: Content::Shape,
             opacity: 70,
             effects: Default::default(),
+            arrow_heads: ArrowHeads::End,
         };
         let sibling = Annotation {
             id: 20,
@@ -2112,6 +2494,7 @@ mod tests {
             content: Content::Shape,
             opacity: 100,
             effects: Default::default(),
+            arrow_heads: ArrowHeads::End,
         };
         let mut d = Document::from_project(
             Rect::new(0, 0, 200, 160).unwrap(),
@@ -2815,6 +3198,7 @@ mod tests {
                 background: Default::default(),
                 tail: None,
                 layout: TextLayout::Native,
+                callout_style: CalloutStyle::Rounded,
                 mask: Arc::new(crate::glyphs::Mask {
                     width: 1024,
                     height: 1024,
@@ -2893,6 +3277,7 @@ mod tests {
                 background: Default::default(),
                 tail: None,
                 layout: TextLayout::Native,
+                callout_style: CalloutStyle::Rounded,
                 mask
             }
         ));

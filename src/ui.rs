@@ -5221,6 +5221,7 @@ fn draw_editor_overlay(window: HWND, dc: HDC, view: View, buffer: Option<&mut Ba
                             rendering: Default::default(),
                             opacity: p.session.opacity(),
                             effects: p.session.creation_effects(),
+                            arrow_heads: p.session.arrow_heads,
                             content: if g.tool == Tool::Highlighter {
                                 Content::Highlight
                             } else if g.tool == Tool::Blur {

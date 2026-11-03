@@ -696,6 +696,7 @@ fn convert(
                 source_size,
                 bubble,
             },
+            callout_style: crate::editor::CalloutStyle::Rounded,
         }
     } else {
         Content::Shape
@@ -749,6 +750,7 @@ fn convert(
         rendering,
         opacity: (o.opacity * 100.).round() as u8,
         effects: effects(o, scale, text_tool)?,
+        arrow_heads: crate::editor::ArrowHeads::End,
         content,
     })
 }

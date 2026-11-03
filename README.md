@@ -1,6 +1,13 @@
 # SnapZy Rust Preview
 
-**Source version:** 0.15.0-alpha.14 | **Latest installer:** 0.15.0-alpha.14 | **Platform:** Windows 10/11, x64 | **License:** MIT
+**Source version:** 0.15.0-alpha.16 (trial) | **Latest public installer:** 0.15.0-alpha.14 | **Platform:** Windows 10/11, x64 | **License:** MIT
+
+## Alpha 15 trial / รุ่นทดลอง Alpha 15
+
+- A completed drawing now selects its object and returns to Select. Drag a rectangle from empty canvas to select several objects, then use Group / Ungroup (Ctrl+G / Ctrl+Shift+G). Group members remain editable after reopening a `.snapzy` project.
+- The **+** tab button creates a white 1024 × 768 workspace; use **More → Open image** to open a file. Copy Image and Duplicate Object have different icons.
+- วาดวัตถุเสร็จแล้วกลับไปเครื่องมือเลือกทันที ลากกรอบจากพื้นที่ว่างเพื่อเลือกหลายวัตถุ แล้วกดรวมกลุ่ม/แยกกลุ่มได้ กลุ่มยังแก้ไขต่อได้หลังเปิดไฟล์ `.snapzy` กลับมา
+- ปุ่ม **+** สร้างงานเปล่าสีขาว 1024 × 768 พิกเซล และไอคอนคัดลอกทั้งภาพแยกจากไอคอนสำเนาวัตถุชัดเจน
 
 ## Changes in 0.15.0-alpha.14 / สิ่งที่ปรับปรุง
 
@@ -51,7 +58,7 @@ EN/TH, capture options and command handoff.
 | --- | --- |
 | <a href="docs/images/snapzy-launcher-overview.png"><img src="docs/images/snapzy-launcher-overview.png" width="420" alt="SnapZy capture launcher"></a> | <a href="docs/images/snapzy-editor-overview.png"><img src="docs/images/snapzy-editor-overview.png" width="420" alt="SnapZy image editor"></a> |
 
-คู่มืออัปเดตถึง Tauri Editor `0.15.0-alpha.14` ภาพประกอบอ้างอิงหน้าตารุ่นก่อนหน้า โดยไฟล์งาน `.snapzy` รองรับเปิด บันทึก และบันทึกเป็นแล้ว
+คู่มืออัปเดตถึง Tauri Editor `0.15.0-alpha.16` ภาพประกอบอ้างอิงหน้าตารุ่นก่อนหน้า โดยไฟล์งาน `.snapzy` รองรับเปิด บันทึก และบันทึกเป็นแล้ว รวมถึงลูกศรสองหัวและรูปแบบกรอบคำพูดหลายแบบ
 
 ## Workspace size / ปรับขนาดพื้นที่ทำงาน
 

@@ -1,4 +1,4 @@
-use crate::editor::{Annotation, Background, Document, FontFamily, Pattern, Point, Style, Tool};
+use crate::editor::{Annotation, ArrowHeads, Background, CalloutStyle, Document, FontFamily, Pattern, Point, Style, Tool};
 use crate::frame::Rect;
 
 #[cfg(test)]
@@ -59,6 +59,8 @@ pub struct Session {
     pub path_resize: Option<PathResize>,
     pub step_resize: Option<StepResize>,
     pub pattern: Pattern,
+    pub arrow_heads: ArrowHeads,
+    pub callout_style: CalloutStyle,
     pub background: Background,
     pub text_font: FontFamily,
     pub text_size: u32,
@@ -214,6 +216,8 @@ impl Session {
             path_resize: None,
             step_resize: None,
             pattern: Pattern::Solid,
+            arrow_heads: ArrowHeads::End,
+            callout_style: CalloutStyle::Rounded,
             background: Background::default(),
             text_font: FontFamily::default(),
             text_size: 24,
@@ -225,6 +229,22 @@ impl Session {
     }
     pub fn press(&mut self, p: Point, tolerance: f64) {
         self.cancel();
+        if self.tool == Tool::Select && self.document.selected_ids().len() > 1 {
+            if let Some(id) = self.document.hit(p, tolerance) {
+                self.document.select_hit(id);
+            } else {
+                self.document.selected = None;
+                self.document.selected_extra.clear();
+            }
+            self.gesture = Some(Gesture {
+                start: p,
+                points: vec![p],
+                end: p,
+                tool: Tool::Select,
+                ready: false,
+            });
+            return;
+        }
         let local = self.selected_transform().inverse(p);
         if let Some(handle) = self.step_handle(p, tolerance) {
             let original = self
@@ -321,8 +341,21 @@ impl Session {
             return;
         }
         if self.tool == Tool::Select {
-            self.document.selected = self.document.hit(p, tolerance);
+            let hit = self.document.hit(p, tolerance);
+            if let Some(id) = hit {
+                self.document.select_hit(id);
+            } else {
+                self.document.selected = None;
+                self.document.selected_extra.clear();
+            }
             if self.document.selected.is_none() {
+                self.gesture = Some(Gesture {
+                    start: p,
+                    points: vec![p],
+                    end: p,
+                    tool: Tool::Select,
+                    ready: false,
+                });
                 return;
             }
             self.sync_selected_style();
@@ -508,6 +541,10 @@ impl Session {
             return false;
         }
         if g.tool == Tool::Select {
+            if self.document.selected.is_none() {
+                self.document.select_area(g.start, g.end);
+                return false;
+            }
             return self
                 .document
                 .move_selected(g.end.x - g.start.x, g.end.y - g.start.y);
@@ -548,6 +585,9 @@ impl Session {
                 .document
                 .add_patterned(g.tool, points, self.style, self.pattern());
             self.apply_creation_opacity(changed, opacity);
+            if changed && g.tool == Tool::Arrow {
+                self.document.objects.last_mut().unwrap().arrow_heads = self.arrow_heads;
+            }
             changed
         }
     }
@@ -824,6 +864,26 @@ impl Session {
         }
         self.document.set_pattern(value)
     }
+    pub fn arrow_heads(&self) -> ArrowHeads {
+        self.document.objects.iter().find(|o| Some(o.id) == self.document.selected && o.tool == Tool::Arrow)
+            .map(|o| o.arrow_heads).unwrap_or(self.arrow_heads)
+    }
+    pub fn set_arrow_heads(&mut self, value: ArrowHeads) -> bool {
+        if self.effective_tool() != Tool::Arrow { return false; }
+        self.cancel();
+        if self.document.selected.is_none() { self.arrow_heads = value; }
+        self.document.set_arrow_heads(value)
+    }
+    pub fn callout_style(&self) -> CalloutStyle {
+        self.document.objects.iter().find(|o| Some(o.id) == self.document.selected && o.tool == Tool::Callout)
+            .map(|o| o.callout_style()).unwrap_or(self.callout_style)
+    }
+    pub fn set_callout_style(&mut self, value: CalloutStyle) -> bool {
+        if self.effective_tool() != Tool::Callout { return false; }
+        self.cancel();
+        if self.document.selected.is_none() { self.callout_style = value; }
+        self.document.set_callout_style(value)
+    }
     pub fn tail_handle(&self, p: Point, radius: f64) -> bool {
         self.tool == Tool::Select
             && radius.is_finite()
@@ -967,6 +1027,7 @@ impl Session {
         self.tool = tool;
         self.style_is_highlighter = tool == Tool::Highlighter;
         self.document.selected = None;
+        self.document.selected_extra.clear();
     }
     pub fn selected_transform(&self) -> crate::combine::Transform {
         self.document

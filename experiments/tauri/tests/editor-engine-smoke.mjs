@@ -7,7 +7,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-const engine = process.env.SNAPZY_ENGINE_PATH || path.join(root, "dist/SnapZy-0.15.0-alpha.14-win-x64/engine/snapzy-engine.exe");
+const engine = process.env.SNAPZY_ENGINE_PATH || path.join(root, "dist/SnapZy-0.15.0-alpha.16-win-x64/engine/snapzy-engine.exe");
 const input = path.join(root, "tests/fixtures/ocr/english.png");
 const output = path.join(tmpdir(), "snapzy-tauri-editor-smoke.png");
 const project = path.join(tmpdir(), "snapzy-tauri-editor-smoke.snapzy");
@@ -113,12 +113,38 @@ try {
   assert.equal(editedAgain.ok, true);
   assert.equal(editedAgain.view.can_undo, true);
 
+  const blank = await send({ type: "blank", width: 1024, height: 768 });
+  assert.equal(blank.ok, true);
+  assert.equal(blank.view.width, 1024);
+  for (const x of [10, 50]) {
+    await send({ type: "apply", command: { type: "choose", tool: "Rectangle" } });
+    await send({ type: "apply", command: { type: "press", point: { x, y: 10 }, tolerance: 3 } });
+    const drawnShape = await send({ type: "apply", command: { type: "release", point: { x: x + 15, y: 25 } } });
+    assert.equal(drawnShape.view.tool, "Select");
+    assert.equal(drawnShape.view.selected, true);
+  }
+  await send({ type: "apply", command: { type: "press", point: { x: 0, y: 0 }, tolerance: 3 } });
+  await send({ type: "apply", command: { type: "move", point: { x: 90, y: 40 } } });
+  const marquee = await send({ type: "apply", command: { type: "release", point: { x: 90, y: 40 } } });
+  assert.equal(marquee.view.selection_count, 2);
+  const grouped = await send({ type: "apply", command: { type: "group_selection" } });
+  assert.equal(grouped.view.grouped, true);
+  await send({ type: "save_project", path: project });
+  const reopenedGroup = await send({ type: "open_project", path: project });
+  assert.equal(reopenedGroup.ok, true);
+  await send({ type: "apply", command: { type: "press", point: { x: 10, y: 15 }, tolerance: 3 } });
+  const selectedGroup = await send({ type: "apply", command: { type: "release", point: { x: 10, y: 15 } } });
+  assert.equal(selectedGroup.view.selection_count, 2);
+  assert.equal(selectedGroup.view.grouped, true);
+  assert.equal((await send({ type: "apply", command: { type: "ungroup_selection" } })).view.grouped, false);
+  assert.equal((await send({ type: "apply", command: { type: "undo" } })).view.grouped, true);
+
   const shutdown = await send({ type: "shutdown" });
   assert.equal(shutdown.ok, true);
   child.stdin.end();
   const code = await new Promise((resolve) => child.once("exit", resolve));
   assert.equal(code, 0);
-  console.log("Passed: Rust editor engine opens, edits, snapshots, combines editable projects, renders PNG and shuts down.");
+  console.log("Passed: Rust editor engine opens, edits, groups, saves blank projects, combines editable projects, renders PNG and shuts down.");
 } finally {
   if (!child.killed) child.kill();
   await rm(output, { force: true });

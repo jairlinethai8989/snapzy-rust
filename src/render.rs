@@ -493,7 +493,7 @@ fn stroke(
     transform: tiny_skia::Transform,
 ) {
     if let Some(tip) = object.tail_tip() {
-        if let Some(path) = crate::callout::perimeter(object.body_bounds(), tip) {
+        if let Some(path) = crate::callout::perimeter_style(object.body_bounds(), tip, object.callout_style()) {
             let mut paint = tiny_skia::Paint::default();
             if let Some(fill) = object.text_background().filter(|b| b.enabled) {
                 let [r, g, b] = fill.rgb;
@@ -624,7 +624,7 @@ fn stroke(
     if object.tool == Tool::Arrow {
         stroke.dash = None;
         let mut head = tiny_skia::PathBuilder::new();
-        for (a, b) in crate::geometry::arrowhead(object) {
+        for (a, b) in crate::geometry::arrowheads(object) {
             head.move_to(a.x as f32, a.y as f32);
             head.line_to(b.x as f32, b.y as f32);
         }
@@ -1279,7 +1279,7 @@ fn text_decoration(
     }
     let (a, b) = object.body_bounds();
     let path = if let Some(tip) = object.tail_tip() {
-        crate::callout::perimeter((a, b), tip)
+        crate::callout::perimeter_style((a, b), tip, object.callout_style())
     } else {
         tiny_skia::Rect::from_ltrb(a.x as f32, a.y as f32, b.x as f32, b.y as f32)
             .map(tiny_skia::PathBuilder::from_rect)

@@ -166,6 +166,7 @@ pub fn build(
             rendering: Default::default(),
             opacity: 100,
             effects: Default::default(),
+            arrow_heads: Default::default(),
             content: Content::Group {
                 image: Arc::new(ImageGroup {
                     frame: frame.clone(),

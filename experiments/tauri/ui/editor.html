@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
-    <title>SnapZy 0.15.0-alpha.14 | Image editor</title>
+    <title>SnapZy 0.15.0-alpha.16 | Image editor</title>
   </head>
   <body class="editor-page">
     <main class="editor-app" aria-label="SnapZy image editor">
       <header class="tab-strip">
         <div id="document-tabs" class="document-tabs" role="tablist"></div>
-        <button class="new-tab" type="button" data-tooltip="openImage" aria-label="Open image"><i data-lucide="plus"></i></button>
+        <button class="new-tab" type="button" data-tooltip="newBlank" aria-label="New blank canvas"><i data-lucide="plus"></i></button>
       </header>
 
       <section class="command-bar" aria-label="Document commands">
@@ -27,7 +27,7 @@
           <button id="ocr-button" class="command-button icon-only secondary-command" type="button" data-tooltip="ocr" aria-label="OCR"><i data-lucide="scan-text"></i></button>
           <button id="help-button" class="command-button icon-only secondary-command" type="button" data-tooltip="help" aria-label="Help"><i data-lucide="circle-help"></i></button>
           <button id="editor-language" class="command-button language-button" type="button" data-tooltip="language">EN</button>
-          <button id="copy-button" class="command-button icon-only" type="button" data-tooltip="copyImage" aria-label="Copy image" disabled><i data-lucide="copy"></i></button>
+          <button id="copy-button" class="command-button icon-only" type="button" data-tooltip="copyImage" aria-label="Copy image" disabled><i data-lucide="clipboard-copy"></i></button>
           <button id="save-png" class="command-button primary-command" type="button" data-tooltip="savePng" disabled><i data-lucide="download"></i><span>PNG</span></button>
         </nav>
       </section>
@@ -42,7 +42,7 @@
           <button class="tool-button" type="button" data-tool="Pen" data-tooltip="pen"><i data-lucide="pen-line"></i></button>
           <button class="tool-button" type="button" data-tool="Highlighter" data-tooltip="highlighter"><i data-lucide="highlighter"></i></button>
           <button class="tool-button" type="button" data-tool="Line" data-tooltip="line"><i data-lucide="minus"></i></button>
-          <button class="tool-button" type="button" data-tool="Arrow" data-tooltip="arrow"><i data-lucide="move-up-right"></i></button>
+          <button id="arrow-style" class="tool-button grouped-tool" type="button" data-menu="arrow-style" data-tool="Arrow" data-tooltip="arrow" aria-haspopup="menu" aria-expanded="false"><i data-lucide="move-up-right"></i><i class="tool-chevron" data-lucide="chevron-down"></i></button>
         </div>
         <div class="tool-group" data-group="shapes">
           <button id="outline-shape" class="tool-button grouped-tool" type="button" data-menu="outline-shape" data-tool="Rectangle" data-tooltip="outlineShape" aria-haspopup="menu" aria-expanded="false"><i data-lucide="square"></i><i class="tool-chevron" data-lucide="chevron-down"></i></button>
@@ -52,15 +52,17 @@
           <button class="tool-button" type="button" data-tool="Blur" data-tooltip="blur"><i data-lucide="droplets"></i></button>
           <button class="tool-button step-tool" type="button" data-tool="Step" data-tooltip="step"><i data-lucide="circle"></i></button>
           <button class="tool-button" type="button" data-tool="Text" data-tooltip="text"><i data-lucide="type"></i></button>
-          <button class="tool-button" type="button" data-tool="Callout" data-tooltip="callout"><i data-lucide="message-square"></i></button>
+          <button id="callout-style" class="tool-button grouped-tool" type="button" data-menu="callout-style" data-tool="Callout" data-tooltip="callout" aria-haspopup="menu" aria-expanded="false"><i data-lucide="message-square"></i><i class="tool-chevron" data-lucide="chevron-down"></i></button>
         </div>
         <div class="tool-spacer"></div>
         <div class="tool-group" data-group="object">
           <button id="effects-button" class="action-tool" type="button" data-tooltip="effects"><i data-lucide="sparkles"></i></button>
           <button id="layers-button" class="action-tool" type="button" data-menu="layers" data-tooltip="layers" aria-haspopup="menu" aria-expanded="false"><i data-lucide="layers-3"></i></button>
+          <button id="group-button" class="action-tool" type="button" data-command="group_selection" data-tooltip="groupObjects" disabled><i data-lucide="group"></i></button>
+          <button id="ungroup-button" class="action-tool" type="button" data-command="ungroup_selection" data-tooltip="ungroupObjects" disabled><i data-lucide="ungroup"></i></button>
         </div>
         <div class="tool-group" data-group="history">
-          <button id="duplicate-button" class="action-tool" type="button" data-command="duplicate_selection" data-tooltip="duplicateObject" disabled><i data-lucide="copy"></i></button>
+          <button id="duplicate-button" class="action-tool" type="button" data-command="duplicate_selection" data-tooltip="duplicateObject" disabled><i data-lucide="copy-plus"></i></button>
           <button id="delete-button" class="action-tool danger" type="button" data-command="delete" data-tooltip="delete" disabled><i data-lucide="trash-2"></i></button>
           <button id="undo-button" class="action-tool" type="button" data-command="undo" data-tooltip="undo" disabled><i data-lucide="undo-2"></i></button>
           <button id="redo-button" class="action-tool" type="button" data-command="redo" data-tooltip="redo" disabled><i data-lucide="redo-2"></i></button>

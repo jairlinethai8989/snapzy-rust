@@ -1,6 +1,6 @@
 use crate::{
     editor::{
-        Annotation, Background, Content, Document, FontFamily, PathRendering, Pattern, Point,
+        Annotation, ArrowHeads, Background, CalloutStyle, Content, Document, FontFamily, PathRendering, Pattern, Point,
         Style, Tool,
     },
     effects::Effects,
@@ -38,6 +38,8 @@ struct Manifest {
     images: Vec<Asset>,
     masks: Vec<Asset>,
     objects: Vec<Object>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    groups: Vec<Vec<u64>>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -80,6 +82,8 @@ struct Object {
     rendering: PathRendering,
     opacity: u8,
     effects: Effects,
+    #[serde(default, skip_serializing_if = "is_default_arrow_heads")]
+    arrow_heads: ArrowHeads,
     content: Payload,
 }
 #[derive(Serialize, Deserialize)]
@@ -107,6 +111,8 @@ enum Payload {
         tail: Option<Point>,
         #[serde(default)]
         layout: crate::editor::TextLayout,
+        #[serde(default, skip_serializing_if = "is_default_callout_style")]
+        callout_style: CalloutStyle,
     },
     Step {
         number: u32,
@@ -117,6 +123,8 @@ enum Payload {
         strength: u32,
     },
 }
+fn is_default_arrow_heads(value: &ArrowHeads) -> bool { *value == ArrowHeads::End }
+fn is_default_callout_style(value: &CalloutStyle) -> bool { *value == CalloutStyle::Rounded }
 fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
@@ -132,6 +140,7 @@ fn valid_rect(r: Rect) -> Result<(), String> {
 }
 pub(crate) fn validate(frame: &Arc<Frame>, d: &Document) -> Result<(), String> {
     crate::combine::validate_tree(&d.objects)?;
+    Document::validate_groups(&d.objects, &d.groups)?;
     valid_rect(d.crop)?;
     if Frame::byte_len(d.crop.width, d.crop.height)? > crate::image_limits::IMAGE_LIMIT {
         return Err("Canvas exceeds 128 MiB".into());
@@ -206,6 +215,7 @@ pub(crate) fn validate(frame: &Arc<Frame>, d: &Document) -> Result<(), String> {
                     wrap_width,
                     tail,
                     layout,
+                    callout_style,
                     ..
                 },
                 Tool::Text | Tool::Callout,
@@ -256,6 +266,7 @@ pub(crate) fn validate(frame: &Arc<Frame>, d: &Document) -> Result<(), String> {
                     && layout
                     && tail.as_ref().is_none_or(valid_point)
                     && (tail.is_some() == (o.tool == Tool::Callout))
+                    && (*callout_style == CalloutStyle::Rounded || o.tool == Tool::Callout)
             }
             (
                 Content::Step {
@@ -364,6 +375,7 @@ pub fn encode(frame: &Arc<Frame>, document: &Document) -> Result<Vec<u8>, String
                         background,
                         tail,
                         layout,
+                        callout_style,
                         ..
                     } => Payload::Text {
                         text: text.to_string(),
@@ -374,6 +386,7 @@ pub fn encode(frame: &Arc<Frame>, document: &Document) -> Result<Vec<u8>, String
                         background: *background,
                         tail: *tail,
                         layout: *layout,
+                        callout_style: *callout_style,
                     },
                     Content::Step {
                         number, diameter, ..
@@ -399,6 +412,7 @@ pub fn encode(frame: &Arc<Frame>, document: &Document) -> Result<Vec<u8>, String
             rendering: o.rendering,
             opacity: o.opacity,
             effects: o.effects,
+            arrow_heads: o.arrow_heads,
             content,
         });
     }
@@ -452,7 +466,7 @@ pub fn encode(frame: &Arc<Frame>, document: &Document) -> Result<Vec<u8>, String
     }
     let manifest = Manifest {
         format: "snapzy-rust-project".into(),
-        schema: 5,
+        schema: 7,
         writer: env!("CARGO_PKG_VERSION").into(),
         base: 0,
         crop: document.crop,
@@ -460,6 +474,7 @@ pub fn encode(frame: &Arc<Frame>, document: &Document) -> Result<Vec<u8>, String
         images,
         masks: glyphs,
         objects,
+        groups: document.groups.clone(),
     };
     let bytes = serde_json::to_vec(&manifest).map_err(|e| e.to_string())?;
     if bytes.len() > MANIFEST_LIMIT || total + bytes.len() > LIMIT {
@@ -623,15 +638,18 @@ fn decode_budget(bytes: &[u8], budget: usize) -> Result<Project, String> {
     drop(f);
     let m: Manifest = serde_json::from_slice(&json).map_err(|e| e.to_string())?;
     if m.format != "snapzy-rust-project"
-        || !matches!(m.schema, 1..=5)
+        || !matches!(m.schema, 1..=7)
         || m.objects.len() > 2000
         || m.images.len() + m.masks.len() + 1 != count
     {
         return Err("Unsupported project version or invalid manifest".into());
     }
+    if m.schema < 6 && !m.groups.is_empty() {
+        return Err("Object groups require project schema 6.".into());
+    }
     if m.objects.iter().any(|o| {
         (m.schema == 1 && (o.parent.present || matches!(o.content, Payload::Group { .. })))
-            || (matches!(m.schema, 2..=5) && !o.parent.present)
+            || (matches!(m.schema, 2..=7) && !o.parent.present)
             || (m.schema < 3 && o.rendering != PathRendering::Native)
             || (m.schema < 4
                 && matches!(
@@ -684,6 +702,7 @@ fn decode_budget(bytes: &[u8], budget: usize) -> Result<Project, String> {
     let frame = frames.get(&m.base).ok_or("Missing source image")?.clone();
     used.insert((false, m.base));
     let mut objects = vec![];
+    let groups = m.groups.clone();
     for o in m.objects {
         let content = match o.content {
             Payload::Group {
@@ -723,6 +742,7 @@ fn decode_budget(bytes: &[u8], budget: usize) -> Result<Project, String> {
                 background,
                 tail,
                 layout,
+                callout_style,
             } => {
                 used.insert((true, mask));
                 Content::Text {
@@ -738,6 +758,7 @@ fn decode_budget(bytes: &[u8], budget: usize) -> Result<Project, String> {
                     background,
                     tail,
                     layout,
+                    callout_style,
                 }
             }
             Payload::Step {
@@ -763,13 +784,14 @@ fn decode_budget(bytes: &[u8], budget: usize) -> Result<Project, String> {
             rendering: o.rendering,
             opacity: o.opacity,
             effects: o.effects,
+            arrow_heads: o.arrow_heads,
             content,
         });
     }
     if used.len() != frames.len() + masks.len() {
         return Err("Unreferenced project assets".into());
     }
-    let document = Document::from_project(m.crop, m.source_clip, objects)?;
+    let document = Document::from_project_with_groups(m.crop, m.source_clip, objects, groups)?;
     validate(&frame, &document)?;
     Ok(Project { frame, document })
 }
@@ -777,7 +799,43 @@ fn decode_budget(bytes: &[u8], budget: usize) -> Result<Project, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::editor::{Point, Style, Tool};
+    use crate::editor::{ArrowHeads, CalloutStyle, Point, Style, Tool};
+    #[test]
+    fn arrow_and_callout_presets_round_trip_without_flattening() {
+        let frame = Arc::new(Frame::new(240, 180, vec![255; 240 * 180 * 4]).unwrap());
+        let mut document = Document::new(240, 180);
+        document.add(Tool::Arrow, vec![Point::new(15., 15.), Point::new(95., 35.)], Style::default());
+        document.set_arrow_heads(ArrowHeads::Both);
+        document.add_callout(Point::new(40., 60.), "Note", 24, Style::default(), Background::default()).unwrap();
+        document.set_callout_style(CalloutStyle::Ellipse);
+        let loaded = decode(&encode(&frame, &document).unwrap()).unwrap();
+        assert_eq!(loaded.document.objects[0].arrow_heads, ArrowHeads::Both);
+        assert_eq!(loaded.document.objects[1].callout_style(), CalloutStyle::Ellipse);
+        assert_eq!(loaded.document.objects[1].tool, Tool::Callout);
+        assert!(loaded.document.objects[1].tail_tip().is_some());
+    }
+    #[test]
+    fn grouped_objects_round_trip_as_editable_members_and_keep_old_schema_compatible() {
+        let frame = Arc::new(Frame::new(100, 80, vec![255; 100 * 80 * 4]).unwrap());
+        let mut document = Document::new(100, 80);
+        for x in [10., 50.] {
+            assert!(document.add(
+                Tool::Rectangle,
+                vec![Point::new(x, 10.), Point::new(x + 15., 25.)],
+                Style::default()
+            ));
+        }
+        document.select_area(Point::new(5., 5.), Point::new(80., 35.));
+        assert!(document.group_selection());
+        let loaded = decode(&encode(&frame, &document).unwrap()).unwrap();
+        assert_eq!(loaded.document.groups.len(), 1);
+        assert_eq!(loaded.document.objects.len(), 2);
+        let mut reopened = loaded.document;
+        reopened.select_hit(reopened.objects[0].id);
+        assert_eq!(reopened.selected_ids().len(), 2);
+        assert!(reopened.move_selected(4., 0.));
+        assert_eq!(reopened.objects[1].points[0], Point::new(54., 10.));
+    }
     #[test]
     fn nested_combination_round_trips_editable_ownership_and_pixels() {
         let f = Arc::new(Frame::new(40, 30, [30, 60, 90, 255].repeat(1200)).unwrap());
@@ -1158,7 +1216,7 @@ mod tests {
         let (f, d) = fixture();
         let bytes = encode(&f, &d).unwrap();
         for mutation in [
-            ("schema", serde_json::json!(6)),
+            ("schema", serde_json::json!(8)),
             ("format", serde_json::json!("neo-snap")),
             ("surprise", serde_json::json!(true)),
         ] {

@@ -1,4 +1,4 @@
-use crate::editor::{Annotation, PathRendering, Point, Tool};
+use crate::editor::{Annotation, ArrowHeads, PathRendering, Point, Tool};
 
 pub fn bend(o: &Annotation, midpoint: Point, crop: crate::frame::Rect) -> Option<Annotation> {
     o.curve_midpoint()?;
@@ -138,4 +138,40 @@ pub fn arrowhead(o: &Annotation) -> [(Point, Point); 2] {
     };
     let tip = |t: f64| Point::new(b.x - length * t.cos(), b.y - length * t.sin());
     [(b, tip(angle - spread)), (b, tip(angle + spread))]
+}
+
+pub fn arrowheads(o: &Annotation) -> Vec<(Point, Point)> {
+    let mut heads = arrowhead(o).to_vec();
+    if o.arrow_heads == ArrowHeads::Both {
+        let mut reversed = o.clone();
+        let mut points = reversed.points.as_ref().clone();
+        points.swap(0, 1);
+        reversed.points = std::sync::Arc::new(points);
+        heads.extend(arrowhead(&reversed));
+    }
+    heads
+}
+
+#[cfg(test)]
+mod arrow_style_tests {
+    use super::*;
+    use crate::editor::{ArrowHeads, Document, Style};
+
+    #[test]
+    fn two_head_arrow_keeps_tips_at_both_endpoints_after_bending() {
+        let mut document = Document::new(240, 180);
+        assert!(document.add(Tool::Arrow, vec![Point::new(20., 80.), Point::new(180., 80.)], Style::default()));
+        assert!(document.set_arrow_heads(ArrowHeads::Both));
+        let arrow = &document.objects[0];
+        let heads = arrowheads(arrow);
+        assert_eq!(heads.len(), 4);
+        assert_eq!(heads[0].0, Point::new(180., 80.));
+        assert_eq!(heads[2].0, Point::new(20., 80.));
+        assert!(document.set_curve_midpoint(Point::new(100., 40.)));
+        let bent = arrowheads(&document.objects[0]);
+        assert_eq!(bent[2].0, Point::new(20., 80.));
+        assert_ne!(bent[2].1, heads[2].1);
+        assert!(document.undo());
+        assert_eq!(document.objects[0].arrow_heads, ArrowHeads::Both);
+    }
 }

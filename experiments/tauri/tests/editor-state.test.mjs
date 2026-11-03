@@ -19,10 +19,18 @@ import {
   screenToDocument,
   shouldHandleCanvasShortcuts,
   shouldDuplicateShortcut,
+  historyShortcut,
   translateVisiblePoint,
   steppedZoom,
   zoomAround,
 } from "../ui/editor-state.js";
+
+test("Ctrl+Z undoes the canvas while text entry retains its own undo", () => {
+  assert.equal(historyShortcut({ key: "z", ctrlKey: true, editing: false }), "undo");
+  assert.equal(historyShortcut({ key: "Z", ctrlKey: true, shiftKey: true, editing: false }), "redo");
+  assert.equal(historyShortcut({ key: "z", ctrlKey: true, editing: true }), null);
+  assert.equal(historyShortcut({ key: "z", ctrlKey: false, editing: false }), null);
+});
 
 test("editor exposes a stable 20-color palette and the approved font families", () => {
   assert.equal(EDITOR_PALETTE.length, 20);
@@ -62,6 +70,20 @@ test("selection overlays are bounded validated and keep screen-size handles", ()
 
   assert.equal(selectionHandleAt(overlay, { x: 26, y: 48 }, { zoom: 2, pan: { x: 5, y: 7 } })?.role, "top_left");
   assert.equal(selectionHandleAt(overlay, { x: 50, y: 50 }, { zoom: 2, pan: { x: 5, y: 7 } }), null);
+});
+
+test("group marquee is a dashed selection and group commands reach the editor service", () => {
+  const overlay = normalizeSelectionOverlay({
+    kind: "group",
+    bounds: { start: { x: 4, y: 8 }, end: { x: 120, y: 90 } },
+    handles: [],
+    movable: true,
+  });
+  assert.deepEqual(selectionGuide(selectionOverlayToScreen(overlay, { zoom: 1, pan: { x: 0, y: 0 } })), {
+    kind: "rectangle", start: { x: 4, y: 8 }, end: { x: 120, y: 90 }, dash: [5, 4],
+  });
+  assert.deepEqual(backendCommand("group_selection"), { type: "group_selection" });
+  assert.deepEqual(backendCommand("ungroup_selection"), { type: "ungroup_selection" });
 });
 
 test("selection guides always use the fixed dashed transform style", () => {
@@ -148,6 +170,8 @@ test("editor defaults keep the established red 5 px drawing style and Noto Sans 
     parameter: 5,
     opacity: 100,
     pattern: "Solid",
+    arrowHeads: "End",
+    calloutStyle: "Rounded",
     font: "noto_sans_thai",
     textBackground: { enabled: false, color: "#ffffff" },
     zoom: 1,
@@ -188,6 +212,13 @@ test("Ctrl+D duplicates only a selected object outside editable controls", () =>
   assert.equal(shouldDuplicateShortcut({ key: "D", ctrlKey: true, editing: true, repeat: false }, true), false);
   assert.equal(shouldDuplicateShortcut({ key: "d", ctrlKey: true, editing: false, repeat: false }, false), false);
   assert.equal(shouldDuplicateShortcut({ key: "d", ctrlKey: true, editing: false, repeat: true }, true), false);
+});
+
+test("arrowheads and callout frame commands accept only the supported visual presets", () => {
+  assert.deepEqual(backendCommand("set_arrow_heads", { heads: "Both" }), { type: "set_arrow_heads", heads: "Both" });
+  assert.deepEqual(backendCommand("set_callout_style", { style: "Ellipse" }), { type: "set_callout_style", style: "Ellipse" });
+  assert.throws(() => backendCommand("set_arrow_heads", { heads: "Start" }), /Unsupported arrowhead/);
+  assert.throws(() => backendCommand("set_callout_style", { style: "Cloud" }), /Unsupported callout/);
 });
 
 test("canvas coordinates account for canvas bounds zoom and pan", () => {

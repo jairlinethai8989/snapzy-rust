@@ -1,5 +1,5 @@
 use crate::{
-    editor::{Background, FontFamily, Order, Pattern, Point, Tool},
+    editor::{ArrowHeads, Background, CalloutStyle, FontFamily, Order, Pattern, Point, Tool},
     effects::Effects,
     frame::{Frame, Rect},
     interaction::Session,
@@ -31,6 +31,12 @@ pub enum EditorCommand {
     SetPattern {
         pattern: Pattern,
     },
+    SetArrowHeads {
+        heads: ArrowHeads,
+    },
+    SetCalloutStyle {
+        style: CalloutStyle,
+    },
     SetFont {
         font: FontFamily,
     },
@@ -58,6 +64,8 @@ pub enum EditorCommand {
         end: Point,
     },
     DuplicateSelection,
+    GroupSelection,
+    UngroupSelection,
     Press {
         point: Point,
         tolerance: f64,
@@ -109,9 +117,14 @@ pub struct EditorView {
     pub parameter: u32,
     pub opacity: u8,
     pub pattern: Pattern,
+    pub arrow_heads: ArrowHeads,
+    pub callout_style: CalloutStyle,
     pub font: FontFamily,
     pub text_background: Background,
     pub selected: bool,
+    pub selected_tool: Option<Tool>,
+    pub selection_count: usize,
+    pub grouped: bool,
     pub can_undo: bool,
     pub can_redo: bool,
     pub can_delete: bool,
@@ -125,6 +138,7 @@ pub struct EditorView {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectionKind {
+    Group,
     Image,
     Shape,
     Region,
@@ -209,6 +223,25 @@ impl EditorService {
         })
     }
 
+    pub fn blank(width: u32, height: u32) -> Result<Self, String> {
+        if width == 0
+            || height == 0
+            || Frame::byte_len(width, height)? > crate::image_limits::IMAGE_LIMIT
+        {
+            return Err("Invalid blank canvas dimensions.".into());
+        }
+        let source = Arc::new(Frame::new(
+            width,
+            height,
+            vec![255; Frame::byte_len(width, height)?],
+        )?);
+        Ok(Self {
+            source,
+            session: Session::new(width, height),
+            project_path: None,
+        })
+    }
+
     pub fn open_path(path: &Path) -> Result<Self, String> {
         let metadata = std::fs::metadata(path).map_err(|e| e.to_string())?;
         if metadata.len() > crate::image_limits::INPUT_FILE_LIMIT as u64 {
@@ -277,9 +310,17 @@ impl EditorService {
             parameter: self.session.parameter(),
             opacity: self.session.opacity(),
             pattern: self.session.pattern(),
+            arrow_heads: self.session.arrow_heads(),
+            callout_style: self.session.callout_style(),
             font: self.session.font(),
             text_background: self.session.text_background(),
             selected: document.selected.is_some(),
+            selected_tool: document.objects.iter().find(|o| Some(o.id) == document.selected).map(|o| o.tool),
+            selection_count: document.selected_ids().len(),
+            grouped: document
+                .groups
+                .iter()
+                .any(|group| group.iter().any(|id| Some(*id) == document.selected)),
             can_undo: document.can_undo(),
             can_redo: document.can_redo(),
             can_delete: document.selected.is_some(),
@@ -294,6 +335,67 @@ impl EditorService {
     }
 
     fn selection_overlay(&self) -> Option<SelectionOverlay> {
+        if let Some(gesture) = &self.session.gesture {
+            if gesture.tool == Tool::Select
+                && self.session.document.selected.is_none()
+                && (gesture.start.x - gesture.end.x).abs() >= 3.
+                && (gesture.start.y - gesture.end.y).abs() >= 3.
+            {
+                return Some(SelectionOverlay {
+                    kind: SelectionKind::Group,
+                    bounds: Some(SelectionBounds {
+                        start: gesture.start,
+                        end: gesture.end,
+                    }),
+                    handles: vec![],
+                    movable: false,
+                });
+            }
+        }
+        let ids = self.session.document.selected_ids();
+        if ids.len() > 1 {
+            let bounds: Vec<_> = self
+                .session
+                .document
+                .objects
+                .iter()
+                .filter(|object| ids.contains(&object.id))
+                .map(|object| object.bounds())
+                .collect();
+            let start = Point::new(
+                bounds
+                    .iter()
+                    .map(|(a, _)| a.x)
+                    .fold(f64::INFINITY, f64::min),
+                bounds
+                    .iter()
+                    .map(|(a, _)| a.y)
+                    .fold(f64::INFINITY, f64::min),
+            );
+            let end = Point::new(
+                bounds
+                    .iter()
+                    .map(|(_, b)| b.x)
+                    .fold(f64::NEG_INFINITY, f64::max),
+                bounds
+                    .iter()
+                    .map(|(_, b)| b.y)
+                    .fold(f64::NEG_INFINITY, f64::max),
+            );
+            let (dx, dy) = self
+                .session
+                .selection_move_delta_local()
+                .unwrap_or((0., 0.));
+            return Some(SelectionOverlay {
+                kind: SelectionKind::Group,
+                bounds: Some(SelectionBounds {
+                    start: Point::new(start.x + dx, start.y + dy),
+                    end: Point::new(end.x + dx, end.y + dy),
+                }),
+                handles: vec![],
+                movable: true,
+            });
+        }
         let selected = self.session.document.selected?;
         let object = self
             .session
@@ -484,6 +586,12 @@ impl EditorService {
             EditorCommand::SetPattern { pattern } => {
                 self.session.set_pattern(pattern);
             }
+            EditorCommand::SetArrowHeads { heads } => {
+                self.session.set_arrow_heads(heads);
+            }
+            EditorCommand::SetCalloutStyle { style } => {
+                self.session.set_callout_style(style);
+            }
             EditorCommand::SetFont { font } => {
                 self.session.set_font(font)?;
             }
@@ -527,6 +635,13 @@ impl EditorService {
                     return Err("Enter 1-4096 nonblank characters.".into());
                 }
                 self.session.apply_creation_opacity(true, opacity);
+                if callout {
+                    if let Some(object) = self.session.document.objects.last_mut() {
+                        if let crate::editor::Content::Text { callout_style, .. } = &mut object.content {
+                            *callout_style = self.session.callout_style;
+                        }
+                    }
+                }
                 let selected = self.session.document.selected;
                 self.session.choose(Tool::Select);
                 self.session.document.selected = selected;
@@ -579,6 +694,14 @@ impl EditorService {
                     self.session.document.selected = selected;
                 }
             }
+            EditorCommand::GroupSelection => {
+                self.session.cancel();
+                self.session.document.group_selection();
+            }
+            EditorCommand::UngroupSelection => {
+                self.session.cancel();
+                self.session.document.ungroup_selection();
+            }
             EditorCommand::Press { point, tolerance } => {
                 let point = self.to_document_point(point);
                 if !valid_point(point)
@@ -601,7 +724,24 @@ impl EditorService {
                 if !valid_point(point) {
                     return Err("Invalid pointer input.".into());
                 }
-                self.session.release(point);
+                let drawing = matches!(
+                    self.session.tool,
+                    Tool::Pen
+                        | Tool::Highlighter
+                        | Tool::Line
+                        | Tool::Arrow
+                        | Tool::Rectangle
+                        | Tool::Ellipse
+                        | Tool::FilledRectangle
+                        | Tool::FilledEllipse
+                        | Tool::Blur
+                        | Tool::Step
+                );
+                if self.session.release(point) && drawing {
+                    let selected = self.session.document.selected;
+                    self.session.choose(Tool::Select);
+                    self.session.document.selected = selected;
+                }
             }
             EditorCommand::ConfirmCrop => {
                 self.session.confirm_crop();
@@ -734,6 +874,10 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum ServiceRequest {
+    Blank {
+        width: u32,
+        height: u32,
+    },
     Open {
         path: PathBuf,
     },
@@ -826,6 +970,13 @@ pub fn run_stdio() -> Result<(), String> {
         };
         let shutdown = matches!(request, ServiceRequest::Shutdown);
         let result = match request {
+            ServiceRequest::Blank { width, height } => {
+                EditorService::blank(width, height).map(|opened| {
+                    let view = opened.view();
+                    service = Some(opened);
+                    Some(view)
+                })
+            }
             ServiceRequest::Open { path } => EditorService::open_path(&path).map(|opened| {
                 let view = opened.view();
                 service = Some(opened);
@@ -899,6 +1050,97 @@ mod tests {
             .write_png(&mut png)
             .unwrap();
         EditorService::open_bytes(&png).unwrap()
+    }
+
+    #[test]
+    fn successful_draw_returns_to_select_with_object_active_but_cancelled_draw_does_not() {
+        let mut service = blank_service();
+        service
+            .apply(EditorCommand::Choose { tool: Tool::Line })
+            .unwrap();
+        service
+            .apply(EditorCommand::Press {
+                point: Point::new(10., 10.),
+                tolerance: 3.,
+            })
+            .unwrap();
+        service
+            .apply(EditorCommand::Release {
+                point: Point::new(10., 10.),
+            })
+            .unwrap();
+        assert_eq!(service.view().tool, Tool::Line);
+        service
+            .apply(EditorCommand::Press {
+                point: Point::new(10., 10.),
+                tolerance: 3.,
+            })
+            .unwrap();
+        let view = service
+            .apply(EditorCommand::Release {
+                point: Point::new(60., 40.),
+            })
+            .unwrap();
+        assert_eq!(view.tool, Tool::Select);
+        assert!(view.selected);
+        assert_eq!(service.session.document.objects.len(), 1);
+    }
+
+    #[test]
+    fn new_blank_document_is_white_and_can_be_resized() {
+        let mut service = EditorService::blank(1024, 768).unwrap();
+        assert_eq!((service.view().width, service.view().height), (1024, 768));
+        let preview = service.preview_png().unwrap();
+        let pixels = crate::image_io::decode(&preview, crate::image_limits::IMAGE_LIMIT).unwrap();
+        assert_eq!(&pixels.bgra[0..4], &[255, 255, 255, 255]);
+        service
+            .apply(EditorCommand::ResizeCanvas {
+                width: 800,
+                height: 600,
+            })
+            .unwrap();
+        assert_eq!((service.view().width, service.view().height), (800, 600));
+    }
+
+    #[test]
+    fn marquee_group_ungroup_and_undo_are_visible_in_editor_commands() {
+        let mut service = blank_service();
+        for x in [10., 50.] {
+            service.session.document.add(
+                Tool::Rectangle,
+                vec![Point::new(x, 10.), Point::new(x + 15., 25.)],
+                Style::default(),
+            );
+        }
+        service
+            .apply(EditorCommand::Choose { tool: Tool::Select })
+            .unwrap();
+        service
+            .apply(EditorCommand::Press {
+                point: Point::new(2., 2.),
+                tolerance: 3.,
+            })
+            .unwrap();
+        service
+            .apply(EditorCommand::Move {
+                point: Point::new(80., 40.),
+            })
+            .unwrap();
+        let view = service
+            .apply(EditorCommand::Release {
+                point: Point::new(80., 40.),
+            })
+            .unwrap();
+        assert_eq!(view.selection_count, 2);
+        assert_eq!(
+            view.selection_overlay.as_ref().unwrap().kind,
+            SelectionKind::Group
+        );
+        let grouped = service.apply(EditorCommand::GroupSelection).unwrap();
+        assert!(grouped.grouped);
+        let ungrouped = service.apply(EditorCommand::UngroupSelection).unwrap();
+        assert!(!ungrouped.grouped);
+        assert!(service.apply(EditorCommand::Undo).unwrap().grouped);
     }
 
     #[test]
@@ -1175,10 +1417,12 @@ mod tests {
         assert_eq!(callout_view.tool, Tool::Select);
         assert_eq!(callout_overlay.kind, SelectionKind::Text);
         assert_eq!(callout_overlay.handles.len(), 7);
-        assert!(callout_overlay
-            .handles
-            .iter()
-            .any(|handle| handle.role == HandleRole::Tail));
+        assert!(
+            callout_overlay
+                .handles
+                .iter()
+                .any(|handle| handle.role == HandleRole::Tail)
+        );
     }
 
     #[test]
@@ -1292,6 +1536,7 @@ mod tests {
                 content: Content::Shape,
                 opacity: 100,
                 effects: Default::default(),
+                arrow_heads: ArrowHeads::End,
             }],
         )
         .unwrap();
@@ -1304,18 +1549,24 @@ mod tests {
             .expect("selected line must expose its controls");
         assert_eq!(overlay.kind, SelectionKind::Line);
         assert_eq!(overlay.handles.len(), 3);
-        assert!(overlay
-            .handles
-            .iter()
-            .any(|handle| handle.role == HandleRole::Start));
-        assert!(overlay
-            .handles
-            .iter()
-            .any(|handle| handle.role == HandleRole::End));
-        assert!(overlay
-            .handles
-            .iter()
-            .any(|handle| handle.role == HandleRole::Curve));
+        assert!(
+            overlay
+                .handles
+                .iter()
+                .any(|handle| handle.role == HandleRole::Start)
+        );
+        assert!(
+            overlay
+                .handles
+                .iter()
+                .any(|handle| handle.role == HandleRole::End)
+        );
+        assert!(
+            overlay
+                .handles
+                .iter()
+                .any(|handle| handle.role == HandleRole::Curve)
+        );
     }
 
     #[test]
@@ -1366,6 +1617,7 @@ mod tests {
                 content: Content::Shape,
                 opacity: 100,
                 effects: Default::default(),
+                arrow_heads: ArrowHeads::End,
             })
             .collect();
         service.session.document = Document::from_project(
@@ -1378,12 +1630,14 @@ mod tests {
         service.session.document.selected = Some(2000);
         let before = service.view();
 
-        assert!(service
-            .apply(EditorCommand::DuplicateArea {
-                start: Point::new(4., 4.),
-                end: Point::new(20., 20.),
-            })
-            .is_err());
+        assert!(
+            service
+                .apply(EditorCommand::DuplicateArea {
+                    start: Point::new(4., 4.),
+                    end: Point::new(20., 20.),
+                })
+                .is_err()
+        );
 
         assert_eq!(service.view(), before);
     }

@@ -1,6 +1,11 @@
-use crate::editor::Point;
+use crate::editor::{CalloutStyle, Point};
 
+#[cfg(test)]
 pub fn perimeter((a, b): (Point, Point), tip: Point) -> Option<tiny_skia::Path> {
+    perimeter_style((a, b), tip, CalloutStyle::Rounded)
+}
+
+pub fn perimeter_style((a, b): (Point, Point), tip: Point, style: CalloutStyle) -> Option<tiny_skia::Path> {
     if [a, b, tip]
         .iter()
         .any(|p| !p.x.is_finite() || !p.y.is_finite() || p.x.abs() > 65535. || p.y.abs() > 65535.)
@@ -9,7 +14,35 @@ pub fn perimeter((a, b): (Point, Point), tip: Point) -> Option<tiny_skia::Path> 
     {
         return None;
     }
-    let radius = 8f64.min((b.x - a.x) / 4.).min((b.y - a.y) / 4.);
+    if style == CalloutStyle::Ellipse {
+        let center = Point::new((a.x + b.x) / 2., (a.y + b.y) / 2.);
+        let rx = (b.x - a.x) / 2.;
+        let ry = (b.y - a.y) / 2.;
+        let point = |i: usize| {
+            let angle = -std::f64::consts::FRAC_PI_2 + i as f64 * std::f64::consts::TAU / 64.;
+            Point::new(center.x + rx * angle.cos(), center.y + ry * angle.sin())
+        };
+        let outside = ((tip.x - center.x) / rx).powi(2) + ((tip.y - center.y) / ry).powi(2) > 1.;
+        let nearest = if outside {
+            (1..64).min_by(|&i, &j| {
+                distance(tip, point(i - 1), point(i + 1))
+                    .total_cmp(&distance(tip, point(j - 1), point(j + 1)))
+            })
+        } else { None };
+        let mut builder = tiny_skia::PathBuilder::new();
+        let start = point(0);
+        builder.move_to(start.x as f32, start.y as f32);
+        for i in 1..=64 {
+            if Some(i) == nearest {
+                builder.line_to(tip.x as f32, tip.y as f32);
+            }
+            let p = point(i);
+            builder.line_to(p.x as f32, p.y as f32);
+        }
+        builder.close();
+        return builder.finish();
+    }
+    let radius = if style == CalloutStyle::Square { 0. } else { 8f64.min((b.x - a.x) / 4.).min((b.y - a.y) / 4.) };
     let edges = [
         (
             Point::new(a.x + radius, a.y),
@@ -62,12 +95,9 @@ pub fn perimeter((a, b): (Point, Point), tip: Point) -> Option<tiny_skia::Path> 
         }
         builder.line_to(end.x as f32, end.y as f32);
         let next = edges[(index + 1) % 4].0;
-        builder.quad_to(
-            corner.x as f32,
-            corner.y as f32,
-            next.x as f32,
-            next.y as f32,
-        );
+        if radius > 0. {
+            builder.quad_to(corner.x as f32, corner.y as f32, next.x as f32, next.y as f32);
+        }
     }
     builder.close();
     builder.finish()
@@ -83,11 +113,16 @@ fn distance(p: Point, a: Point, b: Point) -> f64 {
     .clamp(0., 1.);
     (p.x - a.x - t * dx).hypot(p.y - a.y - t * dy)
 }
+#[cfg(test)]
 pub fn hit(body: (Point, Point), tip: Point, point: Point, tolerance: f64, filled: bool) -> bool {
+    hit_style(body, tip, point, tolerance, filled, CalloutStyle::Rounded)
+}
+
+pub fn hit_style(body: (Point, Point), tip: Point, point: Point, tolerance: f64, filled: bool, style: CalloutStyle) -> bool {
     if !point.x.is_finite() || !point.y.is_finite() || !tolerance.is_finite() || tolerance < 0. {
         return false;
     }
-    let Some(path) = perimeter(body, tip) else {
+    let Some(path) = perimeter_style(body, tip, style) else {
         return false;
     };
     let mut outline = Vec::new();
@@ -129,6 +164,22 @@ pub fn hit(body: (Point, Point), tip: Point, point: Point, tolerance: f64, fille
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::editor::CalloutStyle;
+
+    #[test]
+    fn frame_presets_keep_tail_and_distinct_outlines() {
+        let body = (Point::new(20., 20.), Point::new(120., 80.));
+        let tip = Point::new(70., 110.);
+        let rounded = perimeter_style(body, tip, CalloutStyle::Rounded).unwrap();
+        let square = perimeter_style(body, tip, CalloutStyle::Square).unwrap();
+        let ellipse = perimeter_style(body, tip, CalloutStyle::Ellipse).unwrap();
+        assert_eq!(rounded.bounds().bottom(), 110.);
+        assert_eq!(square.bounds().bottom(), 110.);
+        assert_eq!(ellipse.bounds().bottom(), 110.);
+        assert!(rounded.segments().any(|s| matches!(s, tiny_skia::PathSegment::QuadTo(..))));
+        assert!(!square.segments().any(|s| matches!(s, tiny_skia::PathSegment::QuadTo(..))));
+        assert!(hit_style(body, tip, tip, 2., false, CalloutStyle::Ellipse));
+    }
     #[test]
     fn perimeter_reaches_each_tail_without_internal_base_line() {
         let body = (Point::new(20., 20.), Point::new(120., 80.));

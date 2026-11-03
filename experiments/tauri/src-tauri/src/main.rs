@@ -163,6 +163,11 @@ impl EditorProcess {
         result
     }
 
+    fn blank(&mut self, width: u32, height: u32) -> Result<Value, String> {
+        self.request(json!({ "type": "blank", "width": width, "height": height }))?
+            .ok_or_else(|| "The editor did not return a blank document.".into())
+    }
+
     fn open_path(&mut self, path: &PathBuf) -> Result<Value, String> {
         self.request(json!({ "type": "open", "path": path }))?
             .ok_or_else(|| "The editor did not return a document.".to_string())
@@ -404,6 +409,27 @@ fn editor_open(
         if let Some(mut session) = state.sessions.remove(&session_id) {
             session.process.shutdown();
         }
+        return Err("The editor window is no longer available.".into());
+    }
+    Ok(json!({ "session_id": session_id, "view": view }))
+}
+
+#[tauri::command]
+fn editor_new_blank(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Arc<Engine>>,
+) -> Result<Value, String> {
+    let label = window.label().to_string();
+    if !label.starts_with("editor-") { return Err("Create a blank tab from an editor window.".into()); }
+    let mut process = EditorProcess::start(&app)?;
+    let view = process.blank(1024, 768)?;
+    let mut state = engine.editors.lock().map_err(|_| "The editor service is unavailable.")?;
+    let session_id = state.sessions.insert(EditorSession {
+        process, title: "Untitled canvas".into(), project_path: None,
+    })?;
+    if !state.workspace.add_to_host(&label, &session_id) {
+        if let Some(mut session) = state.sessions.remove(&session_id) { session.process.shutdown(); }
         return Err("The editor window is no longer available.".into());
     }
     Ok(json!({ "session_id": session_id, "view": view }))
@@ -1430,6 +1456,7 @@ fn main() {
             desktop_action,
             editor_window_mode,
             editor_new_window,
+            editor_new_blank,
             editor_open,
             editor_open_image,
             editor_open_image_window,

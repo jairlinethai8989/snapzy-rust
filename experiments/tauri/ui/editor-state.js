@@ -31,7 +31,7 @@ export const EDITOR_FONTS = Object.freeze([
   { id: "sarabun", label: "Sarabun", family: "Sarabun, sans-serif" },
 ]);
 const fonts = new Set(EDITOR_FONTS.map((font) => font.id));
-const selectionKinds = new Set(["image", "shape", "region", "line", "stroke", "text", "step"]);
+const selectionKinds = new Set(["image", "shape", "region", "line", "stroke", "text", "step", "group"]);
 const handleRoles = new Set([
   "top_left", "top", "top_right", "right", "bottom_right", "bottom", "bottom_left", "left",
   "start", "end", "curve", "tail",
@@ -162,6 +162,8 @@ export function normalizeEditor(input) {
     parameter: Number.isInteger(value.parameter) && value.parameter >= 1 && value.parameter <= 256 ? value.parameter : 5,
     opacity: Number.isInteger(value.opacity) && value.opacity >= 0 && value.opacity <= 100 ? value.opacity : 100,
     pattern: patterns.has(value.pattern) ? value.pattern : "Solid",
+    arrowHeads: ["End", "Both"].includes(value.arrowHeads) ? value.arrowHeads : "End",
+    calloutStyle: ["Rounded", "Square", "Ellipse"].includes(value.calloutStyle) ? value.calloutStyle : "Rounded",
     font: fonts.has(value.font) ? value.font : "noto_sans_thai",
     textBackground: {
       enabled: value.textBackground?.enabled === true,
@@ -219,6 +221,14 @@ export function shouldDuplicateShortcut(event, selected) {
     && String(event?.key ?? "").toLowerCase() === "d";
 }
 
+export function historyShortcut(event) {
+  if (event?.editing || event?.composing || event?.ctrlKey !== true || event?.altKey || event?.metaKey) return null;
+  const key = String(event.key ?? "").toLowerCase();
+  if (key === "z") return event.shiftKey ? "redo" : "undo";
+  if (key === "y" && !event.shiftKey) return "redo";
+  return null;
+}
+
 export function contextMenuActions(selected) {
   return selected === true
     ? ["duplicate_selection", "layers", "delete"]
@@ -272,7 +282,7 @@ export function backendCommand(type, payload = {}) {
     }
     return { type, point: { x: point.x, y: point.y } };
   }
-  if (["confirm_crop", "cancel", "delete", "undo", "redo", "reset_curve"].includes(type)) return { type };
+  if (["confirm_crop", "cancel", "delete", "undo", "redo", "reset_curve", "group_selection", "ungroup_selection"].includes(type)) return { type };
   if (type === "duplicate_selection") return { type };
   if (type === "duplicate_area") {
     const { start, end } = payload;
@@ -295,6 +305,14 @@ export function backendCommand(type, payload = {}) {
   if (type === "set_color") return { type, rgb: payload.rgb };
   if (type === "set_parameter" || type === "set_opacity") return { type, value: payload.value };
   if (type === "set_pattern") return { type, pattern: payload.pattern };
+  if (type === "set_arrow_heads") {
+    if (!["End", "Both"].includes(payload.heads)) throw new Error("Unsupported arrowhead layout.");
+    return { type, heads: payload.heads };
+  }
+  if (type === "set_callout_style") {
+    if (!["Rounded", "Square", "Ellipse"].includes(payload.style)) throw new Error("Unsupported callout frame.");
+    return { type, style: payload.style };
+  }
   if (type === "set_font") {
     if (!fonts.has(payload.font)) throw new Error("Unsupported text font.");
     return { type, font: payload.font };

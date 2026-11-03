@@ -42,6 +42,15 @@ try {
     assert.equal(await page.locator("html").getAttribute("lang"), "th");
     assert.equal(await page.locator('[data-tool="Line"]').getAttribute("aria-label"), "เส้นตรง");
     await assertEditorFit(page);
+    if (width === 780) {
+      await page.locator(".new-tab").click();
+      assert.equal(await page.locator("#document-size").textContent(), "1024 × 768 px");
+      assert.equal(await page.locator("#copy-button").isEnabled(), true);
+      assert.equal(await page.locator("#empty-state").isHidden(), true);
+      await page.locator("#copy-button").hover();
+      await page.waitForTimeout(650);
+      assert.equal(await page.locator("#editor-tooltip").textContent(), "คัดลอกภาพ");
+    }
     await page.locator("#open-image").setInputFiles("../../tests/fixtures/ocr/english.png");
     await page.waitForFunction(() => document.querySelector("#document-size").textContent.includes("x"));
     await page.waitForFunction(() => {
@@ -55,6 +64,12 @@ try {
     assert.equal(await page.locator("#zoom-out").isVisible(), true);
     assert.equal(await page.locator("#zoom-in").isVisible(), true);
     await page.locator('[data-tool="Line"]').click();
+    await page.locator("#arrow-style").click();
+    assert.deepEqual(await page.locator("#editor-popup [role='menuitem']").allTextContents(), ["ลูกศรหัวเดียว", "ลูกศรสองหัว"]);
+    await page.getByRole("menuitem", { name: "ลูกศรสองหัว", exact: true }).click();
+    await page.locator("#callout-style").click();
+    assert.deepEqual(await page.locator("#editor-popup [role='menuitem']").allTextContents(), ["ช่องคำพูดมุมมน", "ช่องคำพูดมุมเหลี่ยม", "ช่องคำพูดวงรี"]);
+    await page.getByRole("menuitem", { name: "ช่องคำพูดวงรี", exact: true }).click();
     await page.locator("#tool-color").click();
     assert.equal(await page.locator("#editor-popup .palette-swatch").count(), 20);
     await page.locator("#editor-popup .palette-swatch").nth(8).click();
@@ -129,7 +144,8 @@ try {
       await page.locator("#outline-enabled").check();
       await page.locator("#effects-apply").click();
 
-      await page.locator('[data-tool="Callout"]').click();
+      await page.locator("#callout-style").click();
+      await page.getByRole("menuitem", { name: "ช่องคำพูดวงรี", exact: true }).click();
       await page.locator("#editor-canvas").click({ position: { x: 380, y: 260 } });
       assert.equal(await page.locator("#text-dialog").getAttribute("data-kind"), "Callout");
       await page.locator("#text-value").fill("กรอบข้อความ");

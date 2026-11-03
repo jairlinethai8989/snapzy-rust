@@ -5,11 +5,11 @@ import {
   createIcons, X, Plus, Ellipsis, ScanText, CircleHelp, Copy, Download, MousePointer2, Crop, SquareDashedMousePointer,
   PenLine, Highlighter, Minus, MoveUpRight, Square, Circle, ChevronDown, Droplets,
   Type, MessageSquare, Sparkles, Layers3, Trash2, Undo2, Redo2, Check, Maximize, ImagePlus,
-  FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut, Hand,
+  FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut, Hand, ClipboardCopy, CopyPlus, Group, Ungroup, MoveHorizontal, MessageCircle,
 } from "lucide";
 import {
   EDITOR_FONTS, EDITOR_PALETTE, EDITOR_TOOL_GROUPS, backendCommand, clampContextMenuPosition, contextMenuActions, createCommandQueue, hexToRgb, isContextMenuKey,
-  moveMenuFocus, normalizeEditor, normalizeEffects, rgbToHex, screenToDocument, selectionGuide, selectionHandleAt, selectionOverlayToScreen, shouldDuplicateShortcut, shouldHandleCanvasShortcuts, steppedZoom, zoomAround, ZOOM_STEPS, pngDownloadName,
+  moveMenuFocus, normalizeEditor, normalizeEffects, rgbToHex, screenToDocument, selectionGuide, selectionHandleAt, selectionOverlayToScreen, shouldDuplicateShortcut, shouldHandleCanvasShortcuts, historyShortcut, steppedZoom, zoomAround, ZOOM_STEPS, pngDownloadName,
 } from "./editor-state.js";
 import {
   commandForSession, normalizeWorkspace, removeWorkspaceTab, selectWorkspaceTab,
@@ -17,7 +17,7 @@ import {
 import { editorText, toolTextKey } from "./editor-i18n.js";
 import { combinedBounds, moveCandidate, selectedSessionIds } from "./combine-workflow.js";
 
-const icons = { X, Plus, Ellipsis, ScanText, CircleHelp, Copy, Download, MousePointer2, Crop, SquareDashedMousePointer, PenLine, Highlighter, Minus, MoveUpRight, Square, Circle, ChevronDown, Droplets, Type, MessageSquare, Sparkles, Layers3, Trash2, Undo2, Redo2, Check, Maximize, ImagePlus, FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut, Hand };
+const icons = { X, Plus, Ellipsis, ScanText, CircleHelp, Copy, Download, MousePointer2, Crop, SquareDashedMousePointer, PenLine, Highlighter, Minus, MoveUpRight, Square, Circle, ChevronDown, Droplets, Type, MessageSquare, Sparkles, Layers3, Trash2, Undo2, Redo2, Check, Maximize, ImagePlus, FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut, Hand, ClipboardCopy, CopyPlus, Group, Ungroup, MoveHorizontal, MessageCircle };
 const $ = (selector) => document.querySelector(selector);
 const native = Boolean(window.__TAURI__?.core?.invoke);
 const invoke = (command, args = {}) => window.__TAURI__.core.invoke(command, args);
@@ -71,6 +71,15 @@ function refreshIcons(root = document) {
   createIcons({ icons, attrs: { "stroke-width": 1.65, "aria-hidden": "true" }, nameAttr: "data-lucide", root });
 }
 
+function setToolGlyph(button, name) {
+  if (button.dataset.glyph === name) return;
+  button.dataset.glyph = name;
+  const glyph = document.createElement("i");
+  glyph.dataset.lucide = name;
+  button.querySelector("svg:first-child, i:first-child")?.replaceWith(glyph);
+  refreshIcons(button);
+}
+
 function renderLanguage() {
   document.documentElement.lang = state.language;
   document.querySelectorAll("[data-i18n]").forEach((element) => { element.textContent = t(element.dataset.i18n); });
@@ -115,6 +124,10 @@ function renderTabs() {
 
 function renderControls() {
   document.querySelectorAll("[data-tool]").forEach((button) => button.classList.toggle("selected", button.dataset.tool === state.activeTool));
+  setToolGlyph($("#arrow-style"), state.arrowHeads === "Both" ? "move-horizontal" : "move-up-right");
+  setToolGlyph($("#callout-style"), state.calloutStyle === "Ellipse" ? "message-circle" : state.calloutStyle === "Square" ? "square" : "message-square");
+  $("#arrow-style").dataset.tooltip = state.arrowHeads === "Both" ? "arrowBoth" : "arrowEnd";
+  $("#callout-style").dataset.tooltip = `callout${state.calloutStyle}`;
   setColorButton($("#tool-color"), state.color);
   $("#tool-size").value = state.parameter;
   $("#line-pattern .line-sample").dataset.pattern = state.pattern;
@@ -131,6 +144,8 @@ function renderControls() {
   $("#redo-button").disabled = !view?.can_redo || busy;
   $("#delete-button").disabled = !view?.can_delete || busy;
   $("#duplicate-button").disabled = !view?.selected || busy;
+  $("#group-button").disabled = !view || (view.selection_count ?? 0) < 2 || busy;
+  $("#ungroup-button").disabled = !view?.grouped || busy;
   $("#effects-button").disabled = !view || busy;
   $("#combine-button").disabled = workspace.tabs.length < 2 || busy;
   $("#confirm-crop").hidden = !view?.crop_ready;
@@ -331,9 +346,14 @@ function showContextMenu(anchor, selected) {
   const popup = $("#editor-popup");
   document.body.append(popup);
   popup.replaceChildren();
+  if (state.view?.grouped) {
+    popup.append(popupItem(t("ungroupObjects"), "ungroup", () => applyCommand(backendCommand("ungroup_selection"), false)));
+  } else if ((state.view?.selection_count ?? 0) >= 2) {
+    popup.append(popupItem(t("groupObjects"), "group", () => applyCommand(backendCommand("group_selection"), false)));
+  }
   for (const action of contextMenuActions(selected)) {
     if (action === "duplicate_selection") {
-      popup.append(popupItem(t("duplicateObject"), "copy", () => applyCommand(backendCommand("duplicate_selection")), false, action));
+      popup.append(popupItem(t("duplicateObject"), "copy-plus", () => applyCommand(backendCommand("duplicate_selection")), false, action));
     } else if (action === "layers") {
       popup.append(popupItem(t("layers"), "layers-3", () => showMenu($("#layers-button")), false, action));
     } else if (action === "delete") {
@@ -361,6 +381,17 @@ function showMenu(owner) {
     popup.append(
       popupItem(t("rectangle"), "square", () => chooseTool("Rectangle"), state.activeTool === "Rectangle"),
       popupItem(t("ellipse"), "circle", () => chooseTool("Ellipse"), state.activeTool === "Ellipse"),
+    );
+  } else if (kind === "arrow-style") {
+    popup.append(
+      popupItem(t("arrowEnd"), "move-up-right", () => void chooseArrowHeads("End"), state.arrowHeads === "End"),
+      popupItem(t("arrowBoth"), "move-horizontal", () => void chooseArrowHeads("Both"), state.arrowHeads === "Both"),
+    );
+  } else if (kind === "callout-style") {
+    popup.append(
+      popupItem(t("calloutRounded"), "message-square", () => void chooseCalloutStyle("Rounded"), state.calloutStyle === "Rounded"),
+      popupItem(t("calloutSquare"), "square", () => void chooseCalloutStyle("Square"), state.calloutStyle === "Square"),
+      popupItem(t("calloutEllipse"), "message-circle", () => void chooseCalloutStyle("Ellipse"), state.calloutStyle === "Ellipse"),
     );
   } else if (kind === "filled-shape") {
     popup.append(
@@ -395,7 +426,10 @@ function showMenu(owner) {
   } else {
     popup.append(
       popupItem(t("canvasMenu"), "maximize", openCanvasDialog),
+      popupItem(t("newBlank"), "plus", () => void newBlank()),
       popupItem(t("effects"), "sparkles", openEffects),
+      ...(state.view?.grouped ? [popupItem(t("ungroupObjects"), "ungroup", () => void applyCommand(backendCommand("ungroup_selection"), false))] : []),
+      ...((state.view?.selection_count ?? 0) >= 2 && !state.view?.grouped ? [popupItem(t("groupObjects"), "group", () => void applyCommand(backendCommand("group_selection"), false))] : []),
       popupItem(t("openImage"), "folder-open", () => $("#open-image").click()),
       popupItem(t("addImage"), "image-plus", () => notice(t("notAvailable"))),
       popupItem(t("combine"), "images", () => void openCombineDialog()),
@@ -469,6 +503,8 @@ function mockApply(command) {
   if (command.type === "set_parameter") state = { ...state, parameter: command.value };
   if (command.type === "set_opacity") state = { ...state, opacity: command.value };
   if (command.type === "set_pattern") state = { ...state, pattern: command.pattern };
+  if (command.type === "set_arrow_heads") state = { ...state, arrowHeads: command.heads };
+  if (command.type === "set_callout_style") state = { ...state, calloutStyle: command.style };
   if (command.type === "set_font") state = { ...state, font: command.font };
   if (command.type === "set_text_background") state = {
     ...state,
@@ -517,6 +553,8 @@ function syncView(view) {
     parameter: view.parameter,
     opacity: view.opacity,
     pattern: view.pattern,
+    arrowHeads: view.arrow_heads,
+    calloutStyle: view.callout_style,
     font: view.font,
     textBackground: {
       enabled: view.text_background?.enabled === true,
@@ -825,6 +863,20 @@ async function chooseTool(tool) {
   if (native && state.view && tool !== "DuplicateArea") await applyCommand(backendCommand("choose", { tool }), false);
 }
 
+async function chooseArrowHeads(heads) {
+  if (state.view?.selected_tool !== "Arrow") await chooseTool("Arrow");
+  state = { ...state, arrowHeads: heads };
+  renderControls();
+  await applyCommand(backendCommand("set_arrow_heads", { heads }), false);
+}
+
+async function chooseCalloutStyle(style) {
+  if (state.view?.selected_tool !== "Callout") await chooseTool("Callout");
+  state = { ...state, calloutStyle: style };
+  renderControls();
+  await applyCommand(backendCommand("set_callout_style", { style }), false);
+}
+
 function renderTextDialogTitle() {
   $("#text-dialog-title").textContent = t($("#text-dialog").dataset.kind === "Callout" ? "addCalloutTitle" : "addTextTitle");
 }
@@ -936,6 +988,37 @@ async function openImage(file) {
       notice(t("browserMode"));
     }
     if (!native) $("#document-title").textContent = file.name;
+    requestAnimationFrame(fitView);
+  } catch (error) {
+    notice(`${t("openFailed")} ${String(error)}`);
+  } finally {
+    setBusy(false);
+    renderCanvas();
+  }
+}
+
+async function newBlank() {
+  if (busy) return;
+  setBusy(true);
+  clearNotice();
+  try {
+    if (native) {
+      const opened = await invoke("editor_new_blank");
+      await reloadWorkspace(opened.session_id);
+      loadedSessionId = opened.session_id;
+      syncView(opened.view);
+      await refreshPreview();
+    } else {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1024; canvas.height = 768;
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      previewImage = canvas;
+      mockObjects = [];
+      syncView({ width: 1024, height: 768, revision: 0, tool: "Select", color: [255, 0, 0], parameter: 5, opacity: 100, pattern: "Solid", selected: false, selection_count: 0, grouped: false, can_undo: false, can_redo: false, can_delete: false, crop_ready: false, dirty: true });
+      $("#document-title").textContent = t("newBlank");
+    }
     requestAnimationFrame(fitView);
   } catch (error) {
     notice(`${t("openFailed")} ${String(error)}`);
@@ -1230,8 +1313,8 @@ function queueMove(point) {
 function buildHelp() {
   const grid = $("#help-grid");
   grid.replaceChildren();
-  const iconNames = { Select: "mouse-pointer-2", Crop: "crop", DuplicateArea: "square-dashed-mouse-pointer", Pen: "pen-line", Highlighter: "highlighter", Line: "minus", Arrow: "move-up-right", Rectangle: "square", Ellipse: "circle", FilledRectangle: "square", FilledEllipse: "circle", Blur: "droplets", Step: "circle", Text: "type", Callout: "message-square", DuplicateObject: "copy" };
-  const tools = [...EDITOR_TOOL_GROUPS.flatMap((group) => group.tools), "DuplicateObject"];
+  const iconNames = { Select: "mouse-pointer-2", Crop: "crop", DuplicateArea: "square-dashed-mouse-pointer", Pen: "pen-line", Highlighter: "highlighter", Line: "minus", Arrow: "move-up-right", Rectangle: "square", Ellipse: "circle", FilledRectangle: "square", FilledEllipse: "circle", Blur: "droplets", Step: "circle", Text: "type", Callout: "message-square", DuplicateObject: "copy-plus", GroupObjects: "group", UngroupObjects: "ungroup" };
+  const tools = [...EDITOR_TOOL_GROUPS.flatMap((group) => group.tools), "DuplicateObject", "GroupObjects", "UngroupObjects"];
   for (const tool of tools) {
     const textKey = toolTextKey[tool];
     const item = document.createElement("div");
@@ -1254,7 +1337,7 @@ document.addEventListener("click", (event) => {
   if (button.dataset.colorTarget) return showPalette(button);
   if (button.dataset.menu) return showMenu(button);
   if (button.dataset.tool) return void chooseTool(button.dataset.tool);
-  if (button.dataset.command) return void applyCommand(backendCommand(button.dataset.command));
+  if (button.dataset.command) return void applyCommand(backendCommand(button.dataset.command), !["group_selection", "ungroup_selection"].includes(button.dataset.command));
   if (button.dataset.closeDialog === "close-dialog") finishCloseDecision("cancel");
   else if (button.dataset.closeDialog) document.getElementById(button.dataset.closeDialog).close();
   if (!event.target.closest("#editor-popup")) closeMenu();
@@ -1262,7 +1345,7 @@ document.addEventListener("click", (event) => {
 
 $("#open-image").addEventListener("change", (event) => { void openImage(event.target.files[0]); event.target.value = ""; });
 $("#empty-open").addEventListener("click", requestOpenImage);
-$(".new-tab").addEventListener("click", requestOpenImage);
+$(".new-tab").addEventListener("click", () => void newBlank());
 $("#editor-language").addEventListener("click", () => {
   state = { ...state, language: state.language === "en" ? "th" : "en" };
   try { const saved = JSON.parse(localStorage.getItem(storageKey) || "{}"); localStorage.setItem(storageKey, JSON.stringify({ ...saved, language: state.language })); } catch { /* Optional storage. */ }
@@ -1343,8 +1426,14 @@ $("#editor-canvas").addEventListener("contextmenu", async (event) => {
   if (native) {
     if (state.activeTool !== "Select") await applyCommand(backendCommand("choose", { tool: "Select" }), false);
     const point = canvasPoint(event);
-    await applyPointerCommand(backendCommand("press", { point, tolerance: 5 / state.zoom }));
-    await applyPointerCommand(backendCommand("release", { point }), true);
+    const box = state.view?.selection_overlay?.bounds;
+    const insideMulti = (state.view?.selection_count ?? 0) > 1 && box
+      && point.x >= Math.min(box.start.x, box.end.x) && point.x <= Math.max(box.start.x, box.end.x)
+      && point.y >= Math.min(box.start.y, box.end.y) && point.y <= Math.max(box.start.y, box.end.y);
+    if (!insideMulti) {
+      await applyPointerCommand(backendCommand("press", { point, tolerance: 5 / state.zoom }));
+      await applyPointerCommand(backendCommand("release", { point }), true);
+    }
   }
   showContextMenu(anchor, state.view?.selected === true);
 });
@@ -1378,7 +1467,12 @@ $("#editor-canvas").addEventListener("pointerup", async (event) => {
   if (drawing) {
     const point = canvasPoint(event);
     const duplicateStart = draft?.tool === "DuplicateArea" ? draft.points[0] : null;
-    if (!native && draft && draft.tool !== "DuplicateArea" && draft.points.length > 1) { mockObjects.push(draft); if (state.view) state.view = { ...state.view, can_undo: true, can_delete: true }; }
+    if (!native && draft && draft.tool !== "DuplicateArea" && draft.tool !== "Select" && draft.points.length > 1) {
+      mockObjects.push(draft);
+      state = { ...state, activeTool: "Select" };
+      if (state.view) state.view = { ...state.view, tool: "Select", selected: true, selection_count: 1, can_undo: true, can_delete: true };
+      renderControls();
+    }
     draft = null;
     if (duplicateStart) await applyCommand(backendCommand("duplicate_area", { start: duplicateStart, end: point }));
     else await applyPointerCommand(backendCommand("release", { point }), true);
@@ -1404,6 +1498,16 @@ $("#editor-canvas").addEventListener("wheel", (event) => {
   const next = zoomAround(state, pointerPosition, state.zoom * (event.deltaY < 0 ? 1.12 : .89));
   state = { ...state, ...next }; renderControls(); renderCanvas(); rememberViewport();
 }, { passive: false });
+
+document.addEventListener("keydown", (event) => {
+  const editing = event.target instanceof Element && Boolean(event.target.closest("input, textarea, select, [contenteditable='true']"));
+  if (!state.view || busy || document.querySelector("dialog[open]")) return;
+  const action = historyShortcut({ key: event.key, ctrlKey: event.ctrlKey, shiftKey: event.shiftKey, altKey: event.altKey, metaKey: event.metaKey, editing, composing: event.isComposing === true });
+  if (!action) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  void applyCommand(backendCommand(action), false);
+}, true);
 
 document.addEventListener("keydown", (event) => {
   const editing = event.target instanceof Element && Boolean(event.target.closest("input, textarea, select, [contenteditable='true']"));
@@ -1436,8 +1540,12 @@ document.addEventListener("keydown", (event) => {
     } else { pointer = null; draft = null; void applyCommand(backendCommand("cancel"), false); renderCanvas(); }
   }
   if (event.key === "Delete") void applyCommand(backendCommand("delete"));
-  if (event.ctrlKey && event.key.toLowerCase() === "z") { event.preventDefault(); void applyCommand(backendCommand(event.shiftKey ? "redo" : "undo")); }
-  if (event.ctrlKey && event.key.toLowerCase() === "y") { event.preventDefault(); void applyCommand(backendCommand("redo")); }
+  if (event.ctrlKey && event.key.toLowerCase() === "g") {
+    event.preventDefault();
+    if (event.shiftKey ? state.view?.grouped : (state.view?.selection_count ?? 0) >= 2) {
+      void applyCommand(backendCommand(event.shiftKey ? "ungroup_selection" : "group_selection"), false);
+    }
+  }
   if (event.ctrlKey && event.key.toLowerCase() === "o") { event.preventDefault(); $("#open-image").click(); }
   if (event.ctrlKey && ["+", "="].includes(event.key)) { event.preventDefault(); setZoomAtCenter(steppedZoom(state.zoom, 1)); }
   if (event.ctrlKey && event.key === "-") { event.preventDefault(); setZoomAtCenter(steppedZoom(state.zoom, -1)); }
