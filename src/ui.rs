@@ -1773,8 +1773,12 @@ fn selection_rect(selection: &Selection) -> Option<Rect> {
             selection.desktop.x + selection.end.0,
             selection.desktop.y + selection.end.1,
         );
-        capture::window_at(&selection.windows, x, y)
-            .map(|(_, window)| window.rect)
+        let hit = if matches!(selection.mode, Mode::Window) {
+            capture::still_window_at(&selection.windows, x, y)
+        } else {
+            capture::window_at(&selection.windows, x, y)
+        };
+        hit.map(|(_, window)| window.rect)
             .or_else(|| capture::monitor_at(x, y).ok())?
             .intersection(selection.desktop)
     } else if matches!(selection.mode, Mode::VideoMonitor) {
@@ -1901,7 +1905,7 @@ fn finish_selection(cancel: bool) {
                         selection.desktop.height
                     ));
                 }
-                match capture::window_at(&selection.windows, x, y) {
+                match capture::still_window_at(&selection.windows, x, y) {
                     Some((index, target)) => {
                         if crate::settings::is_test_run() {
                             crate::trace::test_note(&format!(

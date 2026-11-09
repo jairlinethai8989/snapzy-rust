@@ -17,6 +17,7 @@ use windows_sys::Win32::{
 #[derive(Clone, Debug)]
 pub struct Candidate {
     pub window: usize,
+    pub root_owner: usize,
     pub rect: Rect,
 }
 
@@ -174,6 +175,7 @@ unsafe extern "system" fn collect_window(window: HWND, parameter: LPARAM) -> i32
         if let Some(rect) = current_window_rect(window as usize) {
             (&mut *(parameter as *mut Vec<Candidate>)).push(Candidate {
                 window: window as usize,
+                root_owner: GetAncestor(window, GA_ROOTOWNER) as usize,
                 rect,
             });
         }
@@ -189,6 +191,16 @@ pub fn window_at(windows: &[Candidate], x: i32, y: i32) -> Option<(usize, Candid
         .map(|(i, item)| (i, item.clone()))
 }
 
+pub fn still_window_at(windows: &[Candidate], x: i32, y: i32) -> Option<(usize, Candidate)> {
+    let hit = window_at(windows, x, y)?;
+    windows
+        .iter()
+        .enumerate()
+        .find(|(_, candidate)| candidate.window == hit.1.root_owner && candidate.rect.contains(x, y))
+        .map(|(index, candidate)| (index, candidate.clone()))
+        .or(Some(hit))
+}
+
 pub fn validate_window(windows: &[Candidate], index: usize, desktop: Rect) -> Result<Rect, String> {
     let chosen = windows
         .get(index)
@@ -198,13 +210,18 @@ pub fn validate_window(windows: &[Candidate], index: usize, desktop: Rect) -> Re
             return Err("The selected window was closed or minimized.".into());
         }
     }
+    visible_window_rect(windows, index, desktop)
+}
+
+fn visible_window_rect(windows: &[Candidate], index: usize, desktop: Rect) -> Result<Rect, String> {
+    let chosen = &windows[index];
     let visible = chosen
         .rect
         .intersection(desktop)
         .ok_or("The selected window is outside the display.")?;
     if windows[..index]
         .iter()
-        .any(|other| other.rect.intersection(visible).is_some())
+        .any(|other| other.root_owner != chosen.window && other.rect.intersection(visible).is_some())
     {
         return Err(
             "Part of this window is covered. Bring it to the front and capture again.".into(),
@@ -254,5 +271,41 @@ pub fn window_pid(window: usize) -> Result<u32, String> {
         Err("The selected window is no longer available.".into())
     } else {
         Ok(pid)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn still_capture_accepts_an_owned_popup_but_rejects_unrelated_overlap() {
+        let rect = |x, y, w, h| Rect::new(x, y, w, h).unwrap();
+        let desktop = rect(0, 0, 500, 500);
+        let owner = rect(10, 10, 400, 400);
+        let mut windows = vec![
+            Candidate {
+                window: 2,
+                root_owner: 1,
+                rect: rect(40, 40, 100, 100),
+            },
+            Candidate {
+                window: 1,
+                root_owner: 1,
+                rect: owner,
+            },
+        ];
+
+        assert_eq!(still_window_at(&windows, 50, 50).unwrap().0, 1);
+        assert_eq!(visible_window_rect(&windows, 1, desktop).unwrap(), owner);
+        windows.insert(
+            0,
+            Candidate {
+                window: 3,
+                root_owner: 3,
+                rect: rect(300, 300, 80, 80),
+            },
+        );
+        assert!(visible_window_rect(&windows, 2, desktop).is_err());
     }
 }

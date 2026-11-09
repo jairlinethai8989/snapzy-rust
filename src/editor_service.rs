@@ -1,5 +1,5 @@
 use crate::{
-    editor::{ArrowHeads, Background, CalloutStyle, FontFamily, Order, Pattern, Point, Tool},
+    editor::{ArrowHeads, Background, CalloutStyle, Content, FontFamily, Order, Pattern, Point, Tool},
     effects::Effects,
     frame::{Frame, Rect},
     interaction::Session,
@@ -58,6 +58,13 @@ pub enum EditorCommand {
         point: Point,
         text: String,
         callout: bool,
+    },
+    SelectTextAt {
+        point: Point,
+        tolerance: f64,
+    },
+    EditText {
+        text: String,
     },
     DuplicateArea {
         start: Point,
@@ -123,6 +130,7 @@ pub struct EditorView {
     pub text_background: Background,
     pub selected: bool,
     pub selected_tool: Option<Tool>,
+    pub selected_text: Option<String>,
     pub selection_count: usize,
     pub grouped: bool,
     pub can_undo: bool,
@@ -301,6 +309,10 @@ impl EditorService {
 
     pub fn view(&self) -> EditorView {
         let document = &self.session.document;
+        let selected = document
+            .objects
+            .iter()
+            .find(|object| Some(object.id) == document.selected);
         EditorView {
             width: document.crop.width,
             height: document.crop.height,
@@ -315,7 +327,11 @@ impl EditorService {
             font: self.session.font(),
             text_background: self.session.text_background(),
             selected: document.selected.is_some(),
-            selected_tool: document.objects.iter().find(|o| Some(o.id) == document.selected).map(|o| o.tool),
+            selected_tool: selected.map(|object| object.tool),
+            selected_text: selected.and_then(|object| match &object.content {
+                Content::Text { text, .. } => Some(text.to_string()),
+                _ => None,
+            }),
             selection_count: document.selected_ids().len(),
             grouped: document
                 .groups
@@ -645,6 +661,42 @@ impl EditorService {
                 let selected = self.session.document.selected;
                 self.session.choose(Tool::Select);
                 self.session.document.selected = selected;
+            }
+            EditorCommand::SelectTextAt { point, tolerance } => {
+                let point = self.to_document_point(point);
+                if !valid_point(point) || !(0.5..=100.).contains(&tolerance) {
+                    return Err("Invalid pointer input.".into());
+                }
+                let document = &mut self.session.document;
+                let Some(id) = document.hit(point, tolerance).filter(|id| {
+                    document.objects.iter().any(|object| {
+                        object.id == *id && matches!(object.content, Content::Text { .. })
+                    })
+                }) else {
+                    let mut view = self.view();
+                    view.selected_text = None;
+                    return Ok(view);
+                };
+                // Edit the clicked label itself, even when it belongs to a group.
+                document.selected = Some(id);
+                document.selected_extra.clear();
+            }
+            EditorCommand::EditText { text } => {
+                if text.trim().is_empty() || text.chars().count() > 4096 {
+                    return Err("Enter 1-4096 nonblank characters.".into());
+                }
+                let document = &mut self.session.document;
+                let size = document
+                    .objects
+                    .iter()
+                    .find_map(|object| match &object.content {
+                        Content::Text { size, .. } if Some(object.id) == document.selected => {
+                            Some(*size)
+                        }
+                        _ => None,
+                    })
+                    .ok_or("Select a text object first.")?;
+                document.edit_text(&text, size)?;
             }
             EditorCommand::DuplicateArea { start, end } => {
                 self.ensure_duplication_idle()?;
@@ -1224,6 +1276,27 @@ mod tests {
         let undone = service.apply(EditorCommand::Undo).unwrap();
         assert_eq!((undone.width, undone.height), (96, 72));
         assert_eq!(service.session.document.objects.len(), object_count);
+    }
+
+    #[test]
+    fn text_and_callout_can_be_reopened_at_a_point_and_edited_in_place() {
+        for callout in [false, true] {
+            let mut service = blank_service();
+            let point = Point::new(8., 12.);
+            service.apply(EditorCommand::AddText {
+                point, text: "Before".into(), callout,
+            }).unwrap();
+            let object_id = service.session.document.selected.unwrap();
+            let view = service.apply(EditorCommand::SelectTextAt {
+                point: Point::new(12., 16.), tolerance: 5.,
+            }).unwrap();
+            assert_eq!(view.selected_text.as_deref(), Some("Before"));
+            let edited = service.apply(EditorCommand::EditText { text: "After".into() }).unwrap();
+            assert_eq!(edited.selected_text.as_deref(), Some("After"));
+            assert_eq!(service.session.document.selected, Some(object_id));
+            assert_eq!(service.session.document.objects.len(), 1);
+            assert_eq!(service.apply(EditorCommand::Undo).unwrap().selected_text.as_deref(), Some("Before"));
+        }
     }
 
     #[test]

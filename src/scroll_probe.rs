@@ -217,6 +217,7 @@ pub fn worker_main(input_path: &Path) -> std::result::Result<(), String> {
         .map(|(window, rect)| {
             Some(Candidate {
                 window,
+                root_owner: window,
                 rect: decode_rect(rect)?,
             })
         })
