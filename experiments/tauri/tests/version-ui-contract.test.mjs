@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const expectedVersion = "0.15.0-alpha.16";
+const expectedVersion = "0.15.0-alpha.17";
 const versionPattern = new RegExp(expectedVersion.replaceAll(".", "\\."));
 const root = new URL("..", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -117,7 +117,7 @@ test("Duplicate controls use clear object-copy and drag-area icons", async () =>
 
   assert.match(markup, /data-tool="DuplicateArea"[^>]*>[\s\S]*?data-lucide="square-dashed-mouse-pointer"/);
   assert.match(markup, /id="duplicate-button"[^>]*>[\s\S]*?data-lucide="copy-plus"/);
-  assert.match(markup, /id="copy-button"[^>]*>[\s\S]*?data-lucide="clipboard-copy"/);
+  assert.match(markup, /id="copy-button"[^>]*>\s*<i data-lucide="copy"/);
   assert.match(script, /DuplicateArea:\s*"square-dashed-mouse-pointer"/);
   assert.match(text, /Duplicate area[^\n]*drag/i);
   assert.match(text, /สำเนาพื้นที่[^\n]*ลาก/);

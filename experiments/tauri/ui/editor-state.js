@@ -273,10 +273,10 @@ export function backendCommand(type, payload = {}) {
     if (!BACKEND_TOOLS.has(payload.tool)) throw new Error("Unsupported editor tool.");
     return { type, tool: payload.tool };
   }
-  if (["press", "move", "release"].includes(type)) {
+  if (["press", "move", "release", "select_text_at"].includes(type)) {
     const point = payload.point;
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("Invalid pointer input.");
-    if (type === "press") {
+    if (type === "press" || type === "select_text_at") {
       if (!Number.isFinite(payload.tolerance) || payload.tolerance < 0.5 || payload.tolerance > 100) throw new Error("Invalid pointer tolerance.");
       return { type, point: { x: point.x, y: point.y }, tolerance: payload.tolerance };
     }
@@ -295,11 +295,12 @@ export function backendCommand(type, payload = {}) {
       end: { x: end.x, y: end.y },
     };
   }
-  if (type === "add_text") {
-    const point = payload.point;
+  if (type === "add_text" || type === "edit_text") {
     const text = typeof payload.text === "string" ? payload.text : "";
-    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("Invalid text position.");
     if (!text.trim() || [...text].length > 4096) throw new Error("Text must contain 1-4096 nonblank characters.");
+    if (type === "edit_text") return { type, text };
+    const point = payload.point;
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("Invalid text position.");
     return { type, point: { x: point.x, y: point.y }, text, callout: payload.callout === true };
   }
   if (type === "set_color") return { type, rgb: payload.rgb };

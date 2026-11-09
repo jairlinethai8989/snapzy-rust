@@ -137,6 +137,15 @@ try {
       await page.locator("#text-value").fill("ข้อความทดสอบ");
       await page.locator("#text-apply").click();
       assert.equal(await page.locator("#text-dialog").isVisible(), false);
+      await page.locator("#editor-canvas").dblclick({ position: { x: 326, y: 224 } });
+      await page.locator("#text-dialog").waitFor({ state: "visible", timeout: 2500 });
+      assert.equal(await page.locator("#text-value").inputValue(), "ข้อความทดสอบ");
+      await page.locator("#text-value").fill("ข้อความที่แก้แล้ว");
+      await page.locator("#text-apply").click();
+      await page.locator("#editor-canvas").dblclick({ position: { x: 326, y: 224 } });
+      await page.locator("#text-dialog").waitFor({ state: "visible", timeout: 2500 });
+      assert.equal(await page.locator("#text-value").inputValue(), "ข้อความที่แก้แล้ว");
+      await page.keyboard.press("Escape");
       assert.equal(await page.locator("#undo-button").isEnabled(), true);
       await page.locator("#more-button").click();
       await page.getByRole("menuitem", { name: "เอฟเฟกต์", exact: true }).click();
@@ -150,6 +159,11 @@ try {
       assert.equal(await page.locator("#text-dialog").getAttribute("data-kind"), "Callout");
       await page.locator("#text-value").fill("กรอบข้อความ");
       await page.locator("#text-apply").click();
+      await page.locator("#editor-canvas").dblclick({ position: { x: 386, y: 264 } });
+      await page.locator("#text-dialog").waitFor({ state: "visible", timeout: 2500 });
+      assert.equal(await page.locator("#text-value").inputValue(), "กรอบข้อความ");
+      assert.equal(await page.locator("#text-dialog").getAttribute("data-kind"), "Callout");
+      await page.keyboard.press("Escape");
       assert.equal(await page.locator("#duplicate-button").isEnabled(), true);
       await page.locator("#editor-canvas").click({ button: "right", position: { x: 380, y: 260 } });
       assert.equal(await page.locator("#editor-popup").isVisible(), true);

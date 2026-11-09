@@ -2,12 +2,14 @@
 
 mod capture_results;
 mod editor_registry;
+mod png_save_names;
 #[allow(dead_code)]
 #[path = "../../../../src/desktop_bridge.rs"]
 mod protocol;
 
 use capture_results::adopt;
 use editor_registry::{EditorWorkspace, SessionRegistry};
+use png_save_names::PngSaveNames;
 use protocol::{Action, CaptureKind, EngineEvent, Request};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -26,8 +28,8 @@ use std::{
 };
 use tauri::{Emitter, LogicalSize, Manager, Size, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM},
-    System::DataExchange::COPYDATASTRUCT,
+    Foundation::{HWND, LPARAM, SYSTEMTIME},
+    System::{DataExchange::COPYDATASTRUCT, SystemInformation::GetLocalTime},
     UI::WindowsAndMessaging::{
         AllowSetForegroundWindow, EnumWindows, GetClassNameW, GetWindowThreadProcessId,
         SMTO_ABORTIFHUNG, SMTO_BLOCK, SendMessageTimeoutW, WM_COPYDATA,
@@ -39,10 +41,18 @@ struct Engine {
     editors: Mutex<EditorState>,
     working: AtomicBool,
     closing: AtomicBool,
+    png_save_names: PngSaveNames,
 }
 
 impl Default for Engine {
     fn default() -> Self {
+        let mut started = SYSTEMTIME::default();
+        unsafe { GetLocalTime(&mut started) };
+        let run_stamp = format!(
+            "{:04}{:02}{:02}-{:02}{:02}{:02}-{:03}",
+            started.wYear, started.wMonth, started.wDay,
+            started.wHour, started.wMinute, started.wSecond, started.wMilliseconds,
+        );
         Self {
             child: Mutex::new(None),
             editors: Mutex::new(EditorState {
@@ -51,6 +61,7 @@ impl Default for Engine {
             }),
             working: AtomicBool::new(false),
             closing: AtomicBool::new(false),
+            png_save_names: PngSaveNames::new(run_stamp),
         }
     }
 }
@@ -908,9 +919,9 @@ fn editor_save_png(
         .file_stem()
         .and_then(|name| name.to_str())
         .unwrap_or(&title);
-    let initial_name = format!("{}.png", clean_title(stem));
+    let initial_name = engine.png_save_names.next(&clean_title(stem));
     let Some(path) = png_save_dialog(&window, &initial_name)? else {
-        return Err("PNG save cancelled.".into());
+        return Ok(json!({ "path": null }));
     };
     let mut state = engine
         .editors

@@ -1,4 +1,4 @@
-# SnapZy 0.15.0-alpha.16 User Guide
+# SnapZy 0.15.0-alpha.17 User Guide
 
 This guide describes the capture launcher and image editor in SnapZy Rust `0.15.0-alpha.10`. The screenshots use synthetic sample data created for this guide.
 

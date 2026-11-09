@@ -25,6 +25,14 @@ import {
   zoomAround,
 } from "../ui/editor-state.js";
 
+test("existing text can be targeted by position and updated without creating an object", () => {
+  assert.deepEqual(backendCommand("select_text_at", { point: { x: 12, y: 16 }, tolerance: 5 }), {
+    type: "select_text_at", point: { x: 12, y: 16 }, tolerance: 5,
+  });
+  assert.deepEqual(backendCommand("edit_text", { text: "แก้ไข" }), { type: "edit_text", text: "แก้ไข" });
+  assert.throws(() => backendCommand("edit_text", { text: " " }));
+});
+
 test("Ctrl+Z undoes the canvas while text entry retains its own undo", () => {
   assert.equal(historyShortcut({ key: "z", ctrlKey: true, editing: false }), "undo");
   assert.equal(historyShortcut({ key: "Z", ctrlKey: true, shiftKey: true, editing: false }), "redo");

@@ -1,6 +1,11 @@
 # SnapZy Rust Preview
 
-**Source version:** 0.15.0-alpha.16 (trial) | **Latest public installer:** 0.15.0-alpha.16 | **Platform:** Windows 10/11, x64 | **License:** MIT
+**Source version:** 0.15.0-alpha.17 (trial) | **Latest public installer:** 0.15.0-alpha.17 | **Platform:** Windows 10/11, x64 | **License:** MIT
+
+## Alpha 17 trial / รุ่นทดลอง Alpha 17
+
+- PNG saves now receive an automatic session timestamp and sequence number, so repeated saves can be accepted without renaming each file.
+- การบันทึก PNG ตั้งชื่ออัตโนมัติตามเวลาเปิดโปรแกรมและเลขลำดับต่อเนื่องจนกว่าจะออกจาก SnapZy
 
 ## Alpha 16 trial / รุ่นทดลอง Alpha 16
 
@@ -29,15 +34,15 @@ See [Alpha 14 verification notes](docs/testing/0.15.0-alpha.14.md) for the teste
 
 **Windows 10/11 · 64-bit · Pre-release**
 
-[⬇ Download SnapZy 0.15.0-alpha.16 for Windows](https://github.com/jairlinethai8989/snapzy-rust/releases/download/v0.15.0-alpha.16/SnapZy-Setup-0.15.0-alpha.16-win-x64.exe)
+[⬇ Download SnapZy 0.15.0-alpha.17 for Windows](https://github.com/jairlinethai8989/snapzy-rust/releases/download/v0.15.0-alpha.17/SnapZy-Setup-0.15.0-alpha.17-win-x64.exe)
 
 New to GitHub? On the release page, expand **Assets** and choose
-`SnapZy-Setup-0.15.0-alpha.16-win-x64.exe`. Open the downloaded file and follow
+`SnapZy-Setup-0.15.0-alpha.17-win-x64.exe`. Open the downloaded file and follow
 the setup steps. This pre-release installer is unsigned, so Windows may show a
 SmartScreen warning.
 
 สำหรับมือใหม่: กดลิงก์ดาวน์โหลดด้านบน หรือเปิดหน้า Release แล้วกด **Assets**
-จากนั้นเลือก `SnapZy-Setup-0.15.0-alpha.16-win-x64.exe` เปิดไฟล์ที่ดาวน์โหลด
+จากนั้นเลือก `SnapZy-Setup-0.15.0-alpha.17-win-x64.exe` เปิดไฟล์ที่ดาวน์โหลด
 แล้วทำตามขั้นตอนติดตั้ง รุ่นนี้เป็นรุ่นทดสอบและไฟล์ติดตั้งยังไม่ได้ลงลายเซ็น
 Windows จึงอาจแสดงคำเตือน SmartScreen
 
@@ -65,7 +70,7 @@ EN/TH, capture options and command handoff.
 | --- | --- |
 | <a href="docs/images/snapzy-launcher-overview.png"><img src="docs/images/snapzy-launcher-overview.png" width="420" alt="SnapZy capture launcher"></a> | <a href="docs/images/snapzy-editor-overview.png"><img src="docs/images/snapzy-editor-overview.png" width="420" alt="SnapZy image editor"></a> |
 
-คู่มืออัปเดตถึง Tauri Editor `0.15.0-alpha.16` ภาพประกอบอ้างอิงหน้าตารุ่นก่อนหน้า โดยไฟล์งาน `.snapzy` รองรับเปิด บันทึก และบันทึกเป็นแล้ว รวมถึงลูกศรสองหัวและรูปแบบกรอบคำพูดหลายแบบ
+คู่มืออัปเดตถึง Tauri Editor `0.15.0-alpha.17` ภาพประกอบอ้างอิงหน้าตารุ่นก่อนหน้า โดยไฟล์งาน `.snapzy` รองรับเปิด บันทึก และบันทึกเป็นแล้ว รวมถึงลูกศรสองหัวและรูปแบบกรอบคำพูดหลายแบบ
 
 ## Workspace size / ปรับขนาดพื้นที่ทำงาน
 

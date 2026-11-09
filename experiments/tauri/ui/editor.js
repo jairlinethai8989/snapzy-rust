@@ -5,7 +5,7 @@ import {
   createIcons, X, Plus, Ellipsis, ScanText, CircleHelp, Copy, Download, MousePointer2, Crop, SquareDashedMousePointer,
   PenLine, Highlighter, Minus, MoveUpRight, Square, Circle, ChevronDown, Droplets,
   Type, MessageSquare, Sparkles, Layers3, Trash2, Undo2, Redo2, Check, Maximize, ImagePlus,
-  FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut, Hand, ClipboardCopy, CopyPlus, Group, Ungroup, MoveHorizontal, MessageCircle,
+  FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut, Hand, CopyPlus, Group, Ungroup, MoveHorizontal, MessageCircle,
 } from "lucide";
 import {
   EDITOR_FONTS, EDITOR_PALETTE, EDITOR_TOOL_GROUPS, backendCommand, clampContextMenuPosition, contextMenuActions, createCommandQueue, hexToRgb, isContextMenuKey,
@@ -17,7 +17,7 @@ import {
 import { editorText, toolTextKey } from "./editor-i18n.js";
 import { combinedBounds, moveCandidate, selectedSessionIds } from "./combine-workflow.js";
 
-const icons = { X, Plus, Ellipsis, ScanText, CircleHelp, Copy, Download, MousePointer2, Crop, SquareDashedMousePointer, PenLine, Highlighter, Minus, MoveUpRight, Square, Circle, ChevronDown, Droplets, Type, MessageSquare, Sparkles, Layers3, Trash2, Undo2, Redo2, Check, Maximize, ImagePlus, FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut, Hand, ClipboardCopy, CopyPlus, Group, Ungroup, MoveHorizontal, MessageCircle };
+const icons = { X, Plus, Ellipsis, ScanText, CircleHelp, Copy, Download, MousePointer2, Crop, SquareDashedMousePointer, PenLine, Highlighter, Minus, MoveUpRight, Square, Circle, ChevronDown, Droplets, Type, MessageSquare, Sparkles, Layers3, Trash2, Undo2, Redo2, Check, Maximize, ImagePlus, FolderOpen, ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine, Folder, Save, Images, ZoomIn, ZoomOut, Hand, CopyPlus, Group, Ungroup, MoveHorizontal, MessageCircle };
 const $ = (selector) => document.querySelector(selector);
 const native = Boolean(window.__TAURI__?.core?.invoke);
 const invoke = (command, args = {}) => window.__TAURI__.core.invoke(command, args);
@@ -40,7 +40,8 @@ let moveFrame = 0;
 let queuedMove = null;
 let spaceDown = false;
 let panMode = false;
-let textPoint = null;
+let textEntry = null;
+let mockTextTarget = null;
 let workspaceRefreshPending = false;
 let stopWorkspaceListener = null;
 let stopWindowCloseListener = null;
@@ -477,7 +478,7 @@ async function applyCommand(command, refresh = true, allowWhileBusy = false) {
     mockApply(command);
     renderControls();
     renderCanvas();
-    return;
+    return state.view;
   }
   setBusy(true);
   clearNotice();
@@ -486,6 +487,7 @@ async function applyCommand(command, refresh = true, allowWhileBusy = false) {
     syncView(view);
     if (refresh) await refreshPreview();
     else renderCanvas();
+    return view;
   } catch (error) {
     notice(`${t("commandFailed")} ${String(error)}`);
   } finally {
@@ -493,9 +495,9 @@ async function applyCommand(command, refresh = true, allowWhileBusy = false) {
   }
 }
 
-const applyPointerCommand = createCommandQueue(
-  (command, refresh = false) => applyCommand(command, refresh, true),
-);
+const enqueuePointerAction = createCommandQueue((run) => run());
+const applyPointerCommand = (command, refresh = false) =>
+  enqueuePointerAction(() => applyCommand(command, refresh, true));
 
 function mockApply(command) {
   if (command.type === "choose") state = { ...state, activeTool: command.tool };
@@ -531,6 +533,23 @@ function mockApply(command) {
     activeTool: "Select",
     view: state.view ? { ...state.view, outline_supported: true } : state.view,
   };
+  if (command.type === "select_text_at") {
+    const context = $("#editor-canvas").getContext("2d");
+    const { x, y } = command.point;
+    mockTextTarget = mockObjects.findLast((item) => {
+      if (!["Text", "Callout"].includes(item.tool)) return false;
+      const [origin] = item.points;
+      context.save();
+      const { width, height } = draftTextLayout(context, item);
+      context.restore();
+      return x >= origin.x - 10 && x <= origin.x - 10 + width
+        && y >= origin.y - 8 && y <= origin.y - 8 + height;
+    });
+    state = { ...state, view: {
+      ...state.view, selected_tool: mockTextTarget?.tool, selected_text: mockTextTarget?.text,
+    } };
+  }
+  if (command.type === "edit_text" && mockTextTarget) mockTextTarget.text = command.text;
   if (command.type === "duplicate_selection" && mockObjects.length) {
     const source = mockObjects.at(-1);
     mockObjects.push({ ...source, points: source.points.map((point) => ({ x: point.x + 16, y: point.y + 16 })) });
@@ -878,7 +897,11 @@ async function chooseCalloutStyle(style) {
 }
 
 function renderTextDialogTitle() {
-  $("#text-dialog-title").textContent = t($("#text-dialog").dataset.kind === "Callout" ? "addCalloutTitle" : "addTextTitle");
+  const callout = $("#text-dialog").dataset.kind === "Callout";
+  const title = textEntry?.editing
+    ? (callout ? "editCalloutTitle" : "editTextTitle")
+    : (callout ? "addCalloutTitle" : "addTextTitle");
+  $("#text-dialog-title").textContent = t(title);
 }
 
 function setEffectFields() {
@@ -939,23 +962,27 @@ async function applyEffects() {
   }
 }
 
-function openTextEntry(point, tool) {
-  textPoint = point;
+function openTextEntry(point, tool, existingText) {
+  textEntry = { point, editing: existingText !== undefined, sessionId: workspace.activeSessionId };
   const dialog = $("#text-dialog");
   dialog.dataset.kind = tool;
-  $("#text-value").value = "";
+  $("#text-value").value = existingText ?? "";
   renderTextDialogTitle();
   dialog.showModal();
   requestAnimationFrame(() => $("#text-value").focus());
 }
 
 async function applyTextEntry() {
-  if (!textPoint) return;
+  if (!textEntry || busy) return;
   const dialog = $("#text-dialog");
+  if (textEntry.sessionId !== workspace.activeSessionId) {
+    dialog.close();
+    return;
+  }
   let command;
   try {
-    command = backendCommand("add_text", {
-      point: textPoint,
+    command = backendCommand(textEntry.editing ? "edit_text" : "add_text", {
+      point: textEntry.point,
       text: $("#text-value").value,
       callout: dialog.dataset.kind === "Callout",
     });
@@ -964,9 +991,7 @@ async function applyTextEntry() {
     $("#text-value").focus();
     return;
   }
-  dialog.close();
-  textPoint = null;
-  await applyCommand(command);
+  if (await applyCommand(command)) dialog.close();
 }
 
 async function openImage(file) {
@@ -1092,7 +1117,7 @@ async function savePng() {
   try {
     if (native) {
       const result = await invoke("editor_save_png", { sessionId: workspace.activeSessionId });
-      notice((t("saved") + " " + (result.path ?? "")).trim());
+      if (result.path) notice(`${t("saved")} ${result.path}`);
       return;
     }
     const blob = await exportedPng();
@@ -1243,6 +1268,18 @@ function drawSelectionOverlay(context) {
   context.restore();
 }
 
+function draftTextLayout(context, item) {
+  const size = Math.max(8, item.parameter ?? 24);
+  const lines = String(item.text ?? "").split("\n");
+  const font = EDITOR_FONTS.find((candidate) => candidate.id === item.font) ?? EDITOR_FONTS[0];
+  context.font = `${size}px ${font.family}`;
+  return {
+    size, lines,
+    width: Math.max(...lines.map((line) => context.measureText(line || " ").width), size) + 20,
+    height: lines.length * size * 1.35 + 16,
+  };
+}
+
 function drawDraft(context, item) {
   const points = item.points;
   if (!points?.length) return;
@@ -1265,13 +1302,8 @@ function drawDraft(context, item) {
   } else if (item.tool === "Step") {
     context.beginPath(); context.arc(a.x, a.y, 18, 0, Math.PI * 2); context.fill(); context.globalAlpha = 1; context.fillStyle = "white"; context.textAlign = "center"; context.textBaseline = "middle"; context.font = "600 16px Segoe UI"; context.fillText("1", a.x, a.y);
   } else if (["Text", "Callout"].includes(item.tool)) {
-    const size = Math.max(8, item.parameter ?? 24);
-    const lines = String(item.text ?? "").split("\n");
-    const font = EDITOR_FONTS.find((candidate) => candidate.id === item.font) ?? EDITOR_FONTS[0];
-    context.font = `${size}px ${font.family}`;
+    const { size, lines, width, height } = draftTextLayout(context, item);
     context.textBaseline = "top";
-    const width = Math.max(...lines.map((line) => context.measureText(line || " ").width), size) + 20;
-    const height = lines.length * size * 1.35 + 16;
     if (item.background?.enabled) {
       context.fillStyle = item.background.color;
       context.fillRect(a.x - 10, a.y - 8, width, height);
@@ -1361,7 +1393,7 @@ $("#combine-confirm").addEventListener("click", () => void confirmCombine());
 $("#canvas-apply").addEventListener("click", () => void applyCanvasSize());
 $("#effects-apply").addEventListener("click", () => void applyEffects());
 $("#text-apply").addEventListener("click", () => void applyTextEntry());
-$("#text-dialog").addEventListener("close", () => { textPoint = null; });
+$("#text-dialog").addEventListener("close", () => { textEntry = null; });
 $("#copy-button").addEventListener("click", () => void copyPng());
 $("#save-png").addEventListener("click", () => void savePng());
 $("#notice-close").addEventListener("click", clearNotice);
@@ -1438,12 +1470,25 @@ $("#editor-canvas").addEventListener("contextmenu", async (event) => {
   showContextMenu(anchor, state.view?.selected === true);
 });
 $("#editor-canvas").addEventListener("dblclick", (event) => {
-  if (!state.view || busy || event.button !== 0) return;
+  if (!state.view || panMode || spaceDown || event.button !== 0) return;
   const bounds = event.currentTarget.getBoundingClientRect();
   const pointerPosition = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
-  if (selectionHandleAt(state.view.selection_overlay, pointerPosition, state)?.role !== "curve") return;
+  const point = canvasPoint(event);
+  const tolerance = Math.min(100, Math.max(0.5, 5 / state.zoom));
+  const sessionId = workspace.activeSessionId;
   event.preventDefault();
-  void applyCommand(backendCommand("reset_curve"));
+  void enqueuePointerAction(async () => {
+    if (busy || workspace.activeSessionId !== sessionId || !state.view || document.querySelector("dialog[open]")) return;
+    if (selectionHandleAt(state.view.selection_overlay, pointerPosition, state)?.role === "curve") {
+      await applyCommand(backendCommand("reset_curve"));
+      return;
+    }
+    if (state.activeTool !== "Select") return;
+    const view = await applyCommand(backendCommand("select_text_at", { point, tolerance }), false);
+    if (view?.selected_text != null && workspace.activeSessionId === sessionId) {
+      openTextEntry(null, view.selected_tool, view.selected_text);
+    }
+  });
 });
 $("#editor-canvas").addEventListener("pointermove", (event) => {
   if (!pointer || pointer.id !== event.pointerId) return;
